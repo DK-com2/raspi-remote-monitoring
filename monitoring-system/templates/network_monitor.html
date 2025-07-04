@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ネットワーク監視</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .status-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .status-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .card-icon {
+            font-size: 2rem;
+            margin-right: 15px;
+        }
+        
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .metric-label {
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .metric-value {
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+        
+        .signal-bar {
+            width: 100%;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .signal-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4757, #ffa502, #2ed573);
+            transition: width 0.5s ease;
+            border-radius: 10px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-connected {
+            background: #2ed573;
+            box-shadow: 0 0 10px rgba(46, 213, 115, 0.5);
+        }
+        
+        .status-disconnected {
+            background: #ff4757;
+            box-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+        }
+        
+        .status-checking {
+            background: #ffa502;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .test-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #667eea;
+            color: white;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s ease;
+        }
+        
+        .btn:hover {
+            background: #5a6fd8;
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .devices-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 15px 0;
+        }
+        
+        .device-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            transition: background-color 0.3s;
+        }
+        
+        .device-item:hover {
+            background: #e9ecef;
+        }
+        
+        .device-ip {
+            font-weight: 600;
+            color: #333;
+            font-size: 1.1rem;
+        }
+        
+        .device-mac {
+            font-size: 0.85rem;
+            color: #666;
+            font-family: monospace;
+            margin-top: 2px;
+        }
+        
+        .device-vendor {
+            font-size: 0.9rem;
+            color: #495057;
+            margin-top: 4px;
+        }
+        
+        .device-type {
+            font-size: 0.75rem;
+            color: white;
+            background: #007bff;
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: inline-block;
+            margin-top: 4px;
+            font-weight: bold;
+        }
+        
+        .device-type.camera {
+            background: #28a745;
+        }
+        
+        .device-type.microphone {
+            background: #dc3545;
+        }
+        
+        .device-type.gps {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .device-path {
+            font-size: 0.75rem;
+            color: #6c757d;
+            font-family: monospace;
+            margin-top: 2px;
+        }
+        
+        .device-status {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-top: 2px;
+        }
+        
+        .device-status.available {
+            color: #28a745;
+            font-weight: bold;
+        }
+        
+        .last-update {
+            text-align: center;
+            color: white;
+            margin-top: 30px;
+            opacity: 0.8;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* スマホ対応 */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .test-buttons {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 ネットワーク監視</h1>
+            <p>リアルタイムネットワーク状態監視システム</p>
+            <div style="margin-top: 15px;">
+                <a href="/gdrive" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 16px; border-radius: 20px; text-decoration: none; margin: 0 5px;">🗂️ Google Drive</a>
+                <a href="/gdrive/test-upload" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 16px; border-radius: 20px; text-decoration: none; margin: 0 5px;">📤 テスト送信</a>
+            </div>
+        </div>
+        
+        <div class="status-grid">
+            <!-- 接続デバイス一覧 -->
+            <div class="status-card">
+                <div class="card-header">
+                    <span class="card-icon">🎥</span>
+                    <span class="card-title">接続デバイス一覧</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">検出数</span>
+                    <span class="metric-value" id="device-count">- 台</span>
+                </div>
+                <div class="devices-list" id="devices-list">
+                    <div class="loading"></div> スキャン中...
+                </div>
+                <div class="test-buttons">
+                    <button class="btn" onclick="runDeviceScan()" id="device-scan-btn">再スキャン</button>
+                </div>
+            </div>
+            
+            <!-- 接続状態 -->
+            <div class="status-card">
+                <div class="card-header">
+                    <span class="card-icon">🔗</span>
+                    <span class="card-title">接続状態</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">インターネット</span>
+                    <span class="metric-value" id="connection-status">
+                        <span class="status-indicator status-checking"></span>確認中
+                    </span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Ping レイテンシ</span>
+                    <span class="metric-value" id="ping-latency">- ms</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">通信速度</span>
+                    <span class="metric-value" id="internet-speed">- Mbps</span>
+                </div>
+                <div class="test-buttons">
+                    <button class="btn" onclick="runPingTest()">Ping テスト</button>
+                    <button class="btn" onclick="runSpeedTest()" id="speed-test-btn">速度テスト</button>
+                </div>
+            </div>
+            
+            <!-- Tailscale状態 -->
+            <div class="status-card">
+                <div class="card-header">
+                    <span class="card-icon">🔒</span>
+                    <span class="card-title">Tailscale VPN</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">状態</span>
+                    <span class="metric-value" id="tailscale-status">
+                        <span class="status-indicator status-checking"></span>確認中
+                    </span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">VPN IP</span>
+                    <span class="metric-value" id="tailscale-ip">-</span>
+                </div>
+            </div>
+            
+            <!-- ネットワークインターフェース -->
+            <div class="status-card">
+                <div class="card-header">
+                    <span class="card-icon">🔌</span>
+                    <span class="card-title">ネットワークインターフェース</span>
+                </div>
+                <div class="interfaces-list" id="interfaces-list">
+                    <div class="loading"></div> 読み込み中...
+                </div>
+            </div>
+        </div>
+        
+        <div class="last-update">
+            最終更新: <span id="last-update">-</span>
+        </div>
+    </div>
+
+    <script>
+        // ネットワーク状態の定期更新
+        let updateInterval;
+        
+        function updateNetworkStatus() {
+            fetch('/api/network-status')
+                .then(response => response.json())
+                .then(data => {
+                    updateUI(data);
+                })
+                .catch(error => {
+                    console.error('Network status update error:', error);
+                });
+        }
+        
+        function updateUI(data) {
+            // 接続機器情報
+            document.getElementById('device-count').textContent = 
+                data.connected_devices ? `${data.connected_devices.length} 台` : '- 台';
+            
+            const devicesList = document.getElementById('devices-list');
+            if (data.connected_devices && data.connected_devices.length > 0) {
+                devicesList.innerHTML = '';
+                data.connected_devices.forEach(device => {
+                    const div = document.createElement('div');
+                    div.className = 'device-item';
+                    
+                    // デバイスタイプに応じたクラス名
+                    let typeClass = '';
+                    if (device.type === 'カメラ') typeClass = 'camera';
+                    else if (device.type === 'マイク') typeClass = 'microphone';
+                    else if (device.type === 'GPS') typeClass = 'gps';
+                    
+                    div.innerHTML = `
+                        <div class="device-ip">${device.name}</div>
+                        <div class="device-path">${device.device_path || ''}</div>
+                        <div class="device-vendor">${device.driver || device.method || ''}</div>
+                        <div class="device-type ${typeClass}">${device.type}</div>
+                        <div class="device-status ${device.status}">状態: ${device.status}</div>
+                    `;
+                    devicesList.appendChild(div);
+                });
+            } else if (data.connected_devices && data.connected_devices.length === 0) {
+                devicesList.innerHTML = '<div style="text-align: center; color: #6c757d; padding: 20px;">🔍 デバイスが見つかりません</div>';
+            }
+            
+            // 接続状態
+            const statusElement = document.getElementById('connection-status');
+            const statusIndicator = statusElement.querySelector('.status-indicator');
+            
+            switch(data.connection_status) {
+                case 'connected':
+                    statusIndicator.className = 'status-indicator status-connected';
+                    statusElement.innerHTML = '<span class="status-indicator status-connected"></span>接続中';
+                    break;
+                case 'disconnected':
+                    statusIndicator.className = 'status-indicator status-disconnected';
+                    statusElement.innerHTML = '<span class="status-indicator status-disconnected"></span>切断';
+                    break;
+                default:
+                    statusIndicator.className = 'status-indicator status-checking';
+                    statusElement.innerHTML = '<span class="status-indicator status-checking"></span>確認中';
+            }
+            
+            // Ping レイテンシ
+            document.getElementById('ping-latency').textContent = 
+                data.ping_latency ? `${data.ping_latency.toFixed(1)} ms` : '- ms';
+            
+            // 通信速度
+            document.getElementById('internet-speed').textContent = 
+                data.internet_speed ? `${data.internet_speed} Mbps` : '- Mbps';
+            
+            // Tailscale状態
+            const tailscaleStatus = document.getElementById('tailscale-status');
+            const tailscaleIndicator = tailscaleStatus.querySelector('.status-indicator');
+            
+            switch(data.tailscale_status) {
+                case 'connected':
+                    tailscaleIndicator.className = 'status-indicator status-connected';
+                    tailscaleStatus.innerHTML = '<span class="status-indicator status-connected"></span>接続中';
+                    break;
+                case 'disconnected':
+                    tailscaleIndicator.className = 'status-indicator status-disconnected';
+                    tailscaleStatus.innerHTML = '<span class="status-indicator status-disconnected"></span>切断';
+                    break;
+                default:
+                    tailscaleIndicator.className = 'status-indicator status-checking';
+                    tailscaleStatus.innerHTML = '<span class="status-indicator status-checking"></span>不明';
+            }
+            
+            document.getElementById('tailscale-ip').textContent = data.tailscale_ip || '-';
+            
+            // ネットワークインターフェース
+            const interfacesList = document.getElementById('interfaces-list');
+            if (data.network_interfaces && data.network_interfaces.length > 0) {
+                interfacesList.innerHTML = '';
+                data.network_interfaces.forEach(iface => {
+                    const div = document.createElement('div');
+                    div.className = 'interface-item';
+                    
+                    const ips = iface.ip_addresses.map(ip => ip.address).join(', ');
+                    
+                    div.innerHTML = `
+                        <div class="interface-name">${iface.name} ${iface.is_up ? '🟢' : '🔴'}</div>
+                        <div class="interface-ip">${ips}</div>
+                    `;
+                    interfacesList.appendChild(div);
+                });
+            }
+            
+            // 最終更新時刻
+            document.getElementById('last-update').textContent = data.last_update || '-';
+        }
+        
+        function runPingTest() {
+            fetch('/api/ping-test')
+                .then(response => response.json())
+                .then(data => {
+                    alert(`Ping結果: ${data.latency ? data.latency.toFixed(1) + 'ms' : '失敗'}`);
+                });
+        }
+        
+        function runSpeedTest() {
+            const btn = document.getElementById('speed-test-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> 測定中...';
+            
+            fetch('/api/speed-test')
+                .then(response => response.json())
+                .then(data => {
+                    alert(`速度測定結果: ${data.speed_mbps ? data.speed_mbps + ' Mbps' : '失敗'}`);
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.textContent = '速度テスト';
+                });
+        }
+        
+        function runDeviceScan() {
+            const btn = document.getElementById('device-scan-btn');
+            const devicesList = document.getElementById('devices-list');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> スキャン中...';
+            devicesList.innerHTML = '<div class="loading"></div> 機器をスキャン中...';
+            
+            fetch('/api/device-scan')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('device-count').textContent = `${data.count} 台`;
+                    
+                    if (data.devices && data.devices.length > 0) {
+                        devicesList.innerHTML = '';
+                        data.devices.forEach(device => {
+                            const div = document.createElement('div');
+                            div.className = 'device-item';
+                            
+                            // デバイスタイプに応じたクラス名
+                            let typeClass = '';
+                            if (device.type === 'カメラ') typeClass = 'camera';
+                            else if (device.type === 'マイク') typeClass = 'microphone';
+                            else if (device.type === 'GPS') typeClass = 'gps';
+                            
+                            div.innerHTML = `
+                                <div class="device-ip">${device.name}</div>
+                                <div class="device-path">${device.device_path || ''}</div>
+                                <div class="device-vendor">${device.driver || device.method || ''}</div>
+                                <div class="device-type ${typeClass}">${device.type}</div>
+                                <div class="device-status ${device.status}">状態: ${device.status}</div>
+                            `;
+                            devicesList.appendChild(div);
+                        });
+                    } else {
+                        devicesList.innerHTML = '<div style="text-align: center; color: #6c757d; padding: 20px;">🔍 デバイスが見つかりません</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Device scan error:', error);
+                    devicesList.innerHTML = '<div style="text-align: center; color: #dc3545; padding: 20px;">⚠️ スキャンエラー</div>';
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.textContent = '再スキャン';
+                });
+        }
+        
+        // 初回読み込みと定期更新開始
+        updateNetworkStatus();
+        updateInterval = setInterval(updateNetworkStatus, 5000); // 5秒ごと
+        
+        // ページ離脱時にインターバルをクリア
+        window.addEventListener('beforeunload', () => {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Drive 接続状態</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            transition: all 0.3s ease;
+        }
+        .status-connected {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+        }
+        .status-error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        .status-warning {
+            background-color: #fff3cd;
+            border-color: #ffeaa7;
+        }
+        .status-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+        }
+        .button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            text-decoration: none;
+            display: inline-block;
+            transition: background-color 0.3s;
+        }
+        .button:hover {
+            background-color: #0056b3;
+        }
+        .button-secondary {
+            background-color: #6c757d;
+        }
+        .button-secondary:hover {
+            background-color: #545b62;
+        }
+        .button-success {
+            background-color: #28a745;
+        }
+        .button-success:hover {
+            background-color: #1e7e34;
+        }
+        .actions {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .info-label {
+            font-weight: bold;
+            color: #495057;
+        }
+        .status-icon {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+        .loading {
+            text-align: center;
+            color: #6c757d;
+        }
+        @media (max-width: 600px) {
+            .container {
+                margin: 10px;
+                padding: 15px;
+            }
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🗂️ Google Drive 連携状態</h1>
+            <p>Google Drive接続確認とテスト送信機能</p>
+        </div>
+
+        <div id="gdrive-status" class="status-card loading">
+            <h3>📡 接続状態確認中...</h3>
+            <p>Google Drive接続状態を確認しています。しばらくお待ちください。</p>
+        </div>
+
+        <div id="upload-history" class="status-card" style="display: none;">
+            <h3>📤 最新アップロード</h3>
+            <div id="upload-details"></div>
+        </div>
+
+        <div class="actions">
+            <button class="button" onclick="checkConnection()">🔄 接続状態更新</button>
+            <a href="/gdrive/test-upload" class="button button-success">📤 テスト送信</a>
+            <a href="/" class="button button-secondary">🏠 ホームに戻る</a>
+        </div>
+
+        <div class="status-card">
+            <h3>ℹ️ 設定手順</h3>
+            <ol>
+                <li>Google Cloud Consoleでプロジェクトを作成</li>
+                <li>Google Drive APIを有効化</li>
+                <li>OAuth 2.0認証情報を作成（デスクトップアプリ）</li>
+                <li><code>credentials.json</code>を<code>data/credentials/</code>フォルダに配置</li>
+                <li>初回アクセス時にブラウザで認証</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        function checkConnection() {
+            const statusDiv = document.getElementById('gdrive-status');
+            statusDiv.className = 'status-card loading';
+            statusDiv.innerHTML = '<h3>📡 接続状態確認中...</h3><p>Google Drive接続状態を確認しています。</p>';
+
+            fetch('/api/gdrive-status')
+                .then(response => response.json())
+                .then(data => updateStatus(data))
+                .catch(error => {
+                    console.error('Error:', error);
+                    statusDiv.className = 'status-card status-error';
+                    statusDiv.innerHTML = '<h3>❌ 通信エラー</h3><p>サーバーとの通信に失敗しました。</p>';
+                });
+        }
+
+        function updateStatus(data) {
+            const statusDiv = document.getElementById('gdrive-status');
+            const uploadDiv = document.getElementById('upload-history');
+            const uploadDetailsDiv = document.getElementById('upload-details');
+
+            // 接続状態による表示切り替え
+            let statusClass = 'status-info';
+            let statusIcon = '⚠️';
+            let statusTitle = '未設定';
+
+            switch(data.status || data.connection_status) {
+                case 'connected':
+                    statusClass = 'status-connected';
+                    statusIcon = '✅';
+                    statusTitle = '接続済み';
+                    break;
+                case 'authenticating':
+                    statusClass = 'status-connected';
+                    statusIcon = '✅';
+                    statusTitle = '認証済み・接続中';
+                    break;
+                case 'not_configured':
+                case 'not_authenticated':
+                    statusClass = 'status-warning';
+                    statusIcon = '⚙️';
+                    statusTitle = '設定が必要';
+                    break;
+                case 'authentication_failed':
+                    statusClass = 'status-error';
+                    statusIcon = '❌';
+                    statusTitle = '認証失敗';
+                    break;
+                case 'error':
+                    statusClass = 'status-error';
+                    statusIcon = '❌';
+                    statusTitle = 'エラー';
+                    break;
+                case 'not_available':
+                    statusClass = 'status-error';
+                    statusIcon = '🚫';
+                    statusTitle = '利用不可';
+                    break;
+                default:
+                    statusClass = 'status-info';
+                    statusIcon = '⚠️';
+                    statusTitle = '状態不明';
+            }
+
+            statusDiv.className = `status-card ${statusClass}`;
+            statusDiv.innerHTML = `
+                <h3><span class="status-icon">${statusIcon}</span>${statusTitle}</h3>
+                <div class="info-grid">
+                    <span class="info-label">状態:</span>
+                    <span>${data.status || data.connection_status}</span>
+                    <span class="info-label">メッセージ:</span>
+                    <span>${data.message || '情報なし'}</span>
+                    ${data.user_email ? `
+                        <span class="info-label">ユーザー:</span>
+                        <span>${data.user_email}</span>
+                    ` : ''}
+                    <span class="info-label">最終確認:</span>
+                    <span>${data.last_check || '未確認'}</span>
+                </div>
+            `;
+
+            // アップロード履歴表示
+            if (data.last_upload) {
+                const upload = data.last_upload;
+                uploadDetailsDiv.innerHTML = `
+                    <div class="info-grid">
+                        <span class="info-label">ファイル名:</span>
+                        <span>${upload.filename}</span>
+                        <span class="info-label">データタイプ:</span>
+                        <span>${upload.data_type}</span>
+                        <span class="info-label">アップロード時間:</span>
+                        <span>${upload.upload_time}</span>
+                        ${upload.web_link ? `
+                            <span class="info-label">リンク:</span>
+                            <span><a href="${upload.web_link}" target="_blank">Google Driveで開く</a></span>
+                        ` : ''}
+                    </div>
+                `;
+                uploadDiv.style.display = 'block';
+            } else {
+                uploadDiv.style.display = 'none';
+            }
+        }
+
+        // 初回読み込み
+        checkConnection();
+        
+        // 30秒ごとに自動更新
+        setInterval(checkConnection, 30000);
+    </script>
+</body>
+</html>

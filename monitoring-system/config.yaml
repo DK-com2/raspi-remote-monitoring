@@ -1,0 +1,20 @@
+gdrive:
+  # Google Drive設定
+  folder_name: "raspi-monitoring"
+  credentials_file: "data/credentials/credentials.json"
+  token_file: "data/credentials/token.json"
+  
+  # テストデータ設定
+  test_data_types:
+    - name: "テストデータ"
+      type: "random"
+      description: "ランダムなテストデータを生成"
+    - name: "ネットワーク状態"
+      type: "network"
+      description: "現在のネットワーク監視データ"
+
+# アプリケーション設定
+app:
+  debug: true
+  host: "0.0.0.0"
+  port: 5000

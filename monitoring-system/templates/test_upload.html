@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Drive テスト送信</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+        .form-group {
+            margin: 20px 0;
+        }
+        .form-label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #495057;
+        }
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        .form-control:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+        }
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .radio-option {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .radio-option:hover {
+            background-color: #f8f9fa;
+        }
+        .radio-option.selected {
+            background-color: #e3f2fd;
+            border-color: #007bff;
+        }
+        .radio-option input[type="radio"] {
+            margin-right: 12px;
+        }
+        .option-details {
+            flex: 1;
+        }
+        .option-title {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .option-description {
+            color: #6c757d;
+            font-size: 14px;
+        }
+        .button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            text-decoration: none;
+            display: inline-block;
+            transition: background-color 0.3s;
+            font-size: 16px;
+        }
+        .button:hover {
+            background-color: #0056b3;
+        }
+        .button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .button-secondary {
+            background-color: #6c757d;
+        }
+        .button-secondary:hover {
+            background-color: #545b62;
+        }
+        .button-success {
+            background-color: #28a745;
+        }
+        .button-success:hover {
+            background-color: #1e7e34;
+        }
+        .actions {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .result-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            display: none;
+        }
+        .result-success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+        }
+        .result-error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        .loading {
+            text-align: center;
+            color: #6c757d;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .info-label {
+            font-weight: bold;
+            color: #495057;
+        }
+        @media (max-width: 600px) {
+            .container {
+                margin: 10px;
+                padding: 15px;
+            }
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📤 Google Drive テスト送信</h1>
+            <p>各種データをGoogle Driveにテスト送信します</p>
+        </div>
+
+        <div class="form-card">
+            <h3>送信データの選択</h3>
+            <div class="form-group">
+                <label class="form-label">送信するデータタイプを選択してください:</label>
+                <div class="radio-group">
+                    <div class="radio-option" onclick="selectDataType('test')">
+                        <input type="radio" name="data_type" value="test" checked>
+                        <div class="option-details">
+                            <div class="option-title">🎲 テストデータ</div>
+                            <div class="option-description">ランダムな値を含むテスト用データを生成します（温度、湿度、バッテリーレベルなど）</div>
+                        </div>
+                    </div>
+                    <div class="radio-option" onclick="selectDataType('network')">
+                        <input type="radio" name="data_type" value="network">
+                        <div class="option-details">
+                            <div class="option-title">🌐 ネットワーク監視データ</div>
+                            <div class="option-description">現在のネットワーク状態データ（WiFi信号強度、ping、接続状況など）</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button id="upload-btn" class="button button-success" onclick="uploadData()">
+                    📤 Google Driveに送信
+                </button>
+                <a href="/gdrive" class="button button-secondary">📊 状態確認に戻る</a>
+                <a href="/" class="button button-secondary">🏠 ホームに戻る</a>
+            </div>
+        </div>
+
+        <div id="result-card" class="result-card">
+            <h3 id="result-title"></h3>
+            <div id="result-details"></div>
+        </div>
+
+        <div class="form-card">
+            <h3>ℹ️ データ送信について</h3>
+            <ul>
+                <li><strong>テストデータ:</strong> IoTセンサーを想定したランダムデータを生成します</li>
+                <li><strong>ネットワークデータ:</strong> 現在のRaspberry Piのネットワーク状態を送信します</li>
+                <li><strong>ファイル形式:</strong> JSON形式でGoogle Driveに保存されます</li>
+                <li><strong>保存場所:</strong> Google Drive内の「raspi-monitoring」フォルダ</li>
+                <li><strong>将来拡張:</strong> 実際のIoTセンサーデータに簡単に置き換え可能</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let selectedDataType = 'test';
+
+        function selectDataType(type) {
+            selectedDataType = type;
+            
+            // ラジオボタンの選択状態を更新
+            document.querySelectorAll('input[name="data_type"]').forEach(radio => {
+                radio.checked = (radio.value === type);
+            });
+            
+            // 視覚的な選択状態を更新
+            document.querySelectorAll('.radio-option').forEach(option => {
+                option.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+        }
+
+        function uploadData() {
+            const uploadBtn = document.getElementById('upload-btn');
+            const resultCard = document.getElementById('result-card');
+            const resultTitle = document.getElementById('result-title');
+            const resultDetails = document.getElementById('result-details');
+
+            // ボタンを無効化
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '📤 送信中...';
+
+            // 結果カードを表示（ローディング状態）
+            resultCard.className = 'result-card loading';
+            resultCard.style.display = 'block';
+            resultTitle.textContent = '📡 Google Driveに送信中...';
+            resultDetails.innerHTML = '<p>データを処理しています。しばらくお待ちください。</p>';
+
+            // API呼び出し
+            fetch('/api/gdrive-test-upload', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    data_type: selectedDataType
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // 成功時の表示
+                    resultCard.className = 'result-card result-success';
+                    resultTitle.textContent = '✅ 送信成功';
+                    resultDetails.innerHTML = `
+                        <div class="info-grid">
+                            <span class="info-label">ファイル名:</span>
+                            <span>${data.filename}</span>
+                            <span class="info-label">送信時間:</span>
+                            <span>${data.upload_time}</span>
+                            <span class="info-label">ファイルID:</span>
+                            <span style="font-family: monospace; font-size: 12px;">${data.file_id}</span>
+                            ${data.web_link ? `
+                                <span class="info-label">Google Drive:</span>
+                                <span><a href="${data.web_link}" target="_blank">ファイルを開く</a></span>
+                            ` : ''}
+                        </div>
+                        <p style="color: #155724; margin-top: 15px;">
+                            ${data.message}
+                        </p>
+                    `;
+                } else {
+                    // エラー時の表示
+                    resultCard.className = 'result-card result-error';
+                    resultTitle.textContent = '❌ 送信失敗';
+                    resultDetails.innerHTML = `
+                        <p style="color: #721c24;">
+                            ${data.message}
+                        </p>
+                        <p style="margin-top: 15px;">
+                            <strong>確認事項:</strong><br>
+                            • Google Drive認証が完了しているか<br>
+                            • インターネット接続が正常か<br>
+                            • credentials.jsonが正しく配置されているか
+                        </p>
+                    `;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                resultCard.className = 'result-card result-error';
+                resultTitle.textContent = '❌ 通信エラー';
+                resultDetails.innerHTML = `
+                    <p style="color: #721c24;">
+                        サーバーとの通信に失敗しました: ${error.message}
+                    </p>
+                `;
+            })
+            .finally(() => {
+                // ボタンを有効化
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '📤 Google Driveに送信';
+            });
+        }
+
+        // 初期選択状態を設定
+        document.querySelector('.radio-option').classList.add('selected');
+    </script>
+</body>
+</html>
