@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>録音機能 - Raspberry Pi</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+
+        .status-bar {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid #28a745;
+        }
+
+        .recording-controls {
+            background: #fff;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .recording-indicator {
+            display: none;
+            background: #dc3545;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .files-section {
+            background: #fff;
+            border-radius: 10px;
+            padding: 25px;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .file-list {
+            margin-top: 20px;
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+        }
+
+        .file-info {
+            flex: 1;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 5px;
+        }
+
+        .file-details {
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #20c997);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .navigation {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-danger {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-secondary {
+            background: #e2e3e5;
+            color: #383d41;
+            border: 1px solid #d6d8db;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .file-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎤 録音機能</h1>
+            <p>Webから任意の時間を録音できます</p>
+        </div>
+
+        <!-- 録音状態表示 -->
+        <div class="status-bar">
+            <div id="status-content">
+                <div class="loading" style="display: none;" id="loading"></div>
+                <span id="status-text">準備中...</span>
+            </div>
+            
+            <div id="recording-indicator" class="recording-indicator">
+                <strong>🔴 録音中</strong>
+                <div id="recording-progress">
+                    <div>経過時間: <span id="elapsed-time">0</span>秒 / 残り時間: <span id="remaining-time">0</span>秒</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 録音コントロール -->
+        <div class="recording-controls">
+            <h3>録音設定</h3>
+            
+            <div class="form-group">
+                <label for="device-select">録音デバイス:</label>
+                <select id="device-select">
+                    <option value="">読み込み中...</option>
+                </select>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="duration-input">録音時間（秒）:</label>
+                    <input type="number" id="duration-input" min="1" max="3600" value="10">
+                </div>
+                <div class="form-group">
+                    <label for="sample-rate">サンプルレート:</label>
+                    <select id="sample-rate">
+                        <option value="44100">44.1kHz (CD品質)</option>
+                        <option value="48000">48kHz (高品質)</option>
+                        <option value="22050">22.05kHz (標準)</option>
+                        <option value="16000">16kHz (音声)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="channels">チャンネル:</label>
+                    <select id="channels">
+                        <option value="2">ステレオ</option>
+                        <option value="1">モノラル</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <div>
+                        <button id="start-btn" class="button btn-primary">🎤 録音開始</button>
+                        <button id="stop-btn" class="button btn-danger" style="display: none;">⏹️ 停止</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- メッセージ表示 -->
+        <div id="message-area"></div>
+
+        <!-- 録音ファイル一覧 -->
+        <div class="files-section">
+            <h3>録音ファイル一覧</h3>
+            <button id="refresh-files" class="button btn-secondary">🔄 更新</button>
+            
+            <div id="file-list" class="file-list">
+                <div class="loading"></div>
+                読み込み中...
+            </div>
+        </div>
+
+        <!-- ナビゲーション -->
+        <div class="navigation">
+            <a href="/" class="button btn-secondary">🏠 メイン画面に戻る</a>
+        </div>
+    </div>
+
+    <script>
+        class RecordingApp {
+            constructor() {
+                this.isRecording = false;
+                this.statusUpdateInterval = null;
+                this.init();
+            }
+
+            async init() {
+                this.bindEvents();
+                await this.loadDevices();
+                await this.loadFiles();
+                this.startStatusUpdates();
+            }
+
+            bindEvents() {
+                document.getElementById('start-btn').addEventListener('click', () => this.startRecording());
+                document.getElementById('stop-btn').addEventListener('click', () => this.stopRecording());
+                document.getElementById('refresh-files').addEventListener('click', () => this.loadFiles());
+            }
+
+            async loadDevices() {
+                try {
+                    const response = await fetch('/api/recording/devices');
+                    const data = await response.json();
+                    
+                    const deviceSelect = document.getElementById('device-select');
+                    deviceSelect.innerHTML = '';
+                    
+                    if (data.devices && data.devices.length > 0) {
+                        data.devices.forEach(device => {
+                            const option = document.createElement('option');
+                            option.value = device.id;
+                            option.textContent = `${device.name} (${device.type})`;
+                            deviceSelect.appendChild(option);
+                        });
+                    } else {
+                        deviceSelect.innerHTML = '<option value="">録音デバイスが見つかりません</option>';
+                    }
+                } catch (error) {
+                    console.error('デバイス読み込みエラー:', error);
+                    this.showMessage('デバイス読み込みに失敗しました', 'danger');
+                }
+            }
+
+            async startRecording() {
+                try {
+                    const duration = parseInt(document.getElementById('duration-input').value);
+                    const deviceId = document.getElementById('device-select').value;
+                    const sampleRate = parseInt(document.getElementById('sample-rate').value);
+                    const channels = parseInt(document.getElementById('channels').value);
+
+                    if (!duration || duration < 1 || duration > 3600) {
+                        this.showMessage('録音時間は1秒から3600秒の間で指定してください', 'danger');
+                        return;
+                    }
+
+                    if (!deviceId) {
+                        this.showMessage('録音デバイスを選択してください', 'danger');
+                        return;
+                    }
+
+                    const response = await fetch('/api/recording/start', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            duration: duration,
+                            device_id: deviceId,
+                            sample_rate: sampleRate,
+                            channels: channels
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        this.isRecording = true;
+                        this.updateUI();
+                        this.showMessage(result.message, 'success');
+                    } else {
+                        this.showMessage(result.message, 'danger');
+                    }
+                } catch (error) {
+                    console.error('録音開始エラー:', error);
+                    this.showMessage('録音開始に失敗しました', 'danger');
+                }
+            }
+
+            async stopRecording() {
+                try {
+                    const response = await fetch('/api/recording/stop', {
+                        method: 'POST'
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        this.isRecording = false;
+                        this.updateUI();
+                        this.showMessage(result.message, 'success');
+                        await this.loadFiles();
+                    } else {
+                        this.showMessage(result.message, 'danger');
+                    }
+                } catch (error) {
+                    console.error('録音停止エラー:', error);
+                    this.showMessage('録音停止に失敗しました', 'danger');
+                }
+            }
+
+            async updateStatus() {
+                try {
+                    const response = await fetch('/api/recording/status');
+                    const data = await response.json();
+
+                    if (data.error) {
+                        this.showMessage(`状態取得エラー: ${data.error}`, 'danger');
+                        return;
+                    }
+
+                    this.isRecording = data.is_recording;
+                    
+                    if (this.isRecording) {
+                        document.getElementById('elapsed-time').textContent = data.elapsed_time || 0;
+                        document.getElementById('remaining-time').textContent = Math.round(data.remaining_time || 0);
+                        
+                        const progress = ((data.elapsed_time || 0) / (data.duration || 1)) * 100;
+                        document.getElementById('progress-fill').style.width = `${Math.min(progress, 100)}%`;
+                        
+                        document.getElementById('status-text').textContent = 
+                            `録音中: ${data.filename || ''} (${data.elapsed_time || 0}秒/${data.duration || 0}秒)`;
+                    } else {
+                        document.getElementById('status-text').textContent = data.last_recording 
+                            ? `最後の録音: ${data.last_recording.filename} (${data.last_recording.actual_duration}秒)`
+                            : '待機中';
+                    }
+
+                    this.updateUI();
+
+                } catch (error) {
+                    console.error('状態更新エラー:', error);
+                }
+            }
+
+            updateUI() {
+                const startBtn = document.getElementById('start-btn');
+                const stopBtn = document.getElementById('stop-btn');
+                const recordingIndicator = document.getElementById('recording-indicator');
+                const controls = document.querySelectorAll('#device-select, #duration-input, #sample-rate, #channels');
+
+                if (this.isRecording) {
+                    startBtn.style.display = 'none';
+                    stopBtn.style.display = 'inline-block';
+                    recordingIndicator.style.display = 'block';
+                    controls.forEach(control => control.disabled = true);
+                } else {
+                    startBtn.style.display = 'inline-block';
+                    stopBtn.style.display = 'none';
+                    recordingIndicator.style.display = 'none';
+                    controls.forEach(control => control.disabled = false);
+                }
+            }
+
+            async loadFiles() {
+                try {
+                    const response = await fetch('/api/recording/list');
+                    const data = await response.json();
+
+                    const fileList = document.getElementById('file-list');
+                    
+                    if (data.error) {
+                        fileList.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                        return;
+                    }
+
+                    if (data.files && data.files.length > 0) {
+                        fileList.innerHTML = data.files.map(file => `
+                            <div class="file-item">
+                                <div class="file-info">
+                                    <div class="file-name">${file.filename}</div>
+                                    <div class="file-details">
+                                        サイズ: ${this.formatFileSize(file.size)} | 
+                                        作成: ${file.created} | 
+                                        更新: ${file.modified}
+                                    </div>
+                                </div>
+                                <div>
+                                    <a href="/api/recording/download/${file.filename}" 
+                                       class="button btn-primary" 
+                                       style="padding: 8px 15px; font-size: 14px;">
+                                        📥 ダウンロード
+                                    </a>
+                                </div>
+                            </div>
+                        `).join('');
+                    } else {
+                        fileList.innerHTML = '<div class="alert alert-secondary">録音ファイルがありません</div>';
+                    }
+                } catch (error) {
+                    console.error('ファイル一覧読み込みエラー:', error);
+                    document.getElementById('file-list').innerHTML = 
+                        '<div class="alert alert-danger">ファイル一覧の読み込みに失敗しました</div>';
+                }
+            }
+
+            formatFileSize(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            showMessage(message, type = 'info') {
+                const messageArea = document.getElementById('message-area');
+                const alertClass = type === 'success' ? 'alert-success' : 
+                                 type === 'danger' ? 'alert-danger' : 'alert-secondary';
+                
+                messageArea.innerHTML = `<div class="alert ${alertClass}">${message}</div>`;
+                
+                setTimeout(() => {
+                    messageArea.innerHTML = '';
+                }, 5000);
+            }
+
+            startStatusUpdates() {
+                this.updateStatus();
+                this.statusUpdateInterval = setInterval(() => {
+                    this.updateStatus();
+                }, 1000);
+            }
+
+            stopStatusUpdates() {
+                if (this.statusUpdateInterval) {
+                    clearInterval(this.statusUpdateInterval);
+                    this.statusUpdateInterval = null;
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            window.recordingApp = new RecordingApp();
+        });
+
+        window.addEventListener('beforeunload', () => {
+            if (window.recordingApp) {
+                window.recordingApp.stopStatusUpdates();
+            }
+        });
+    </script>
+</body>
+</html>

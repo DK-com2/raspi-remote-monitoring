@@ -1,36 +1,74 @@
 #!/usr/bin/env python3
 """
-ネットワーク通信強度監視アプリ
-遠隔操作のための第一歩として、ネットワーク状態をリアルタイム監視
+Raspberry Pi 監視システム - モジュラー版
+ネットワーク監視・録音・Google Drive連携機能をモジュール化
 """
 
-from flask import Flask, render_template, jsonify, request
-import subprocess
-import re
-import time
+from flask import Flask, render_template, jsonify, request, send_file
 import threading
-import psutil
-import requests
+import time
+import os
 from datetime import datetime
+from pathlib import Path
 
-# Google Drive連携機能
-from gdrive_utils import GDriveManager, DataSource
+# 作業ディレクトリとパスの初期化
+script_dir = Path(__file__).parent.absolute()
+project_root = script_dir.parent  # raspi-remote-monitoring
+data_dir = project_root / "data"
 
+# 絶対パスでデータディレクトリを作成
+os.makedirs(data_dir / "recordings", exist_ok=True)
+os.makedirs(data_dir / "credentials", exist_ok=True)
+
+print(f"📁 プロジェクトルート: {project_root}")
+print(f"📁 データディレクトリ: {data_dir}")
+
+# モジュールインポート
+from config import settings
+print(f"📝 設定情報: {settings._config.keys() if hasattr(settings, '_config') else '設定未読み込み'}")
+print(f"🔍 ネットワーク設定: {settings.network}")
+
+from modules.network import NetworkMonitor
+from modules.recording import AudioRecorder
+from modules.gdrive import GDriveManager, DataSource  # Google Drive連携機能
+
+# Flaskアプリ初期化
 app = Flask(__name__)
 
-# グローバル変数（ネットワーク状態保存用）
-network_data = {
-    'last_update': None,
-    'ping_latency': None,
-    'internet_speed': None,
-    'connection_status': 'checking',
-    'network_interfaces': [],
-    'tailscale_status': 'unknown',
-    'tailscale_ip': None,
-    'connected_devices': []  # 接続機器一覧
-}
+# モジュールインスタンス
+network_monitor = NetworkMonitor()
+audio_recorder = AudioRecorder(str(data_dir / "recordings"))
 
-# Google Drive用グローバル変数
+# Google Drive初期化（絶対パスで初期化）
+try:
+    # Google Drive用の設定を絶対パスで作成
+    gdrive_config = {
+        'gdrive': {
+            'folder_name': 'raspi-monitoring',
+            'credentials_file': str(data_dir / "credentials" / "credentials.json"),
+            'token_file': str(data_dir / "credentials" / "token.json")
+        }
+    }
+    
+    # 一時的に設定ファイルを作成
+    import tempfile
+    import yaml
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(gdrive_config, f)
+        temp_config_path = f.name
+    
+    gdrive_manager = GDriveManager(temp_config_path)
+    
+    # 一時ファイルを削除
+    os.unlink(temp_config_path)
+    
+    print("Google Drive manager initialized with absolute paths")
+except Exception as e:
+    print(f"Google Drive initialization failed: {e}")
+    print("Google Drive機能を無効化します")
+    gdrive_manager = None
+
+# Google Drive用グローバル変数（互換性のため維持）
 gdrive_data = {
     'connection_status': 'not_configured',
     'last_check': None,
@@ -39,513 +77,29 @@ gdrive_data = {
     'message': '未設定'
 }
 
-# Google Drive初期化
-try:
-    gdrive_manager = GDriveManager()
-    print("Google Drive manager initialized")
-except Exception as e:
-    print(f"Google Drive initialization failed: {e}")
-    gdrive_manager = None
-
-def get_connection_type():
-    """接続タイプの判定（WiFi/モバイル/有線）"""
-    try:
-        # ネットワークインターフェースから接続タイプを判定
-        interfaces = psutil.net_if_addrs()
-        
-        for interface_name, addresses in interfaces.items():
-            if_stats = psutil.net_if_stats().get(interface_name)
-            if if_stats and if_stats.isup:
-                # WiFi インターフェース
-                if any(name in interface_name.lower() for name in ['wlan', 'wifi', 'wl']):
-                    return 'wifi', interface_name
-                # モバイル/cellular インターフェース
-                elif any(name in interface_name.lower() for name in ['wwan', 'ppp', 'usb', 'rmnet', 'qmi']):
-                    return 'mobile', interface_name
-                # 有線イーサネット
-                elif any(name in interface_name.lower() for name in ['eth', 'en']):
-                    return 'ethernet', interface_name
-        
-        return 'unknown', None
-        
-    except Exception as e:
-        print(f"Connection type detection error: {e}")
-        return 'unknown', None
-
-def get_connected_devices():
-    """接続されているデバイスの一覧取得（マイク、カメラ、GPS特化）"""
-    try:
-        devices = []
-        
-        # カメラデバイスの検出
-        camera_devices = get_camera_devices()
-        devices.extend(camera_devices)
-        
-        # オーディオデバイス（マイク）の検出
-        audio_devices = get_audio_devices()
-        devices.extend(audio_devices)
-        
-        # GPSデバイスの検出
-        gps_devices = get_gps_devices()
-        devices.extend(gps_devices)
-        
-        return devices
-        
-    except Exception as e:
-        print(f"Connected devices scan error: {e}")
-        return []
-
-def get_camera_devices():
-    """カメラデバイスの検出"""
-    try:
-        devices = []
-        
-        # Video4Linux (V4L2) デバイスの検出
-        try:
-            import glob
-            video_devices = glob.glob('/dev/video*')
-            for device_path in video_devices:
-                try:
-                    # v4l2-ctlでデバイス情報取得
-                    result = subprocess.run(['v4l2-ctl', '--device', device_path, '--info'], 
-                                          capture_output=True, text=True, timeout=5)
-                    if result.returncode == 0:
-                        # デバイス名を抽出
-                        name_match = re.search(r'Card type\s*:\s*(.+)', result.stdout)
-                        device_name = name_match.group(1).strip() if name_match else f'Camera {device_path}'
-                        
-                        # ドライバー情報を抽出
-                        driver_match = re.search(r'Driver name\s*:\s*(.+)', result.stdout)
-                        driver = driver_match.group(1).strip() if driver_match else 'unknown'
-                        
-                        devices.append({
-                            'device_path': device_path,
-                            'name': device_name,
-                            'type': 'カメラ',
-                            'driver': driver,
-                            'status': 'available',
-                            'method': 'v4l2'
-                        })
-                except Exception as e:
-                    # v4l2-ctlが失敗してもデバイスは表示
-                    devices.append({
-                        'device_path': device_path,
-                        'name': f'Camera {device_path}',
-                        'type': 'カメラ',
-                        'driver': 'unknown',
-                        'status': 'detected',
-                        'method': 'filesystem'
-                    })
-        except Exception as e:
-            print(f"Camera detection error: {e}")
-        
-        return devices
-        
-    except Exception as e:
-        print(f"Camera devices scan error: {e}")
-        return []
-
-def get_audio_devices():
-    """オーディオデバイス（マイク）の検出"""
-    try:
-        devices = []
-        
-        # ALSA録音デバイスの検出
-        try:
-            result = subprocess.run(['arecord', '-l'], capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                lines = result.stdout.split('\n')
-                for line in lines:
-                    # カード 0: bcm2835 [bcm2835 ALSA], デバイス 0: bcm2835 ALSA [bcm2835 ALSA]
-                    match = re.match(r'カード\s+(\d+):\s+([^\[]+)\s*\[([^\]]+)\].*デバイス\s+(\d+):\s*([^\[]+)\s*\[([^\]]+)\]', line)
-                    if not match:
-                        # 英語版もチェック
-                        match = re.match(r'card\s+(\d+):\s+([^\[]+)\s*\[([^\]]+)\].*device\s+(\d+):\s*([^\[]+)\s*\[([^\]]+)\]', line, re.IGNORECASE)
-                    
-                    if match:
-                        card_num, card_name, card_desc, device_num, device_name, device_desc = match.groups()
-                        devices.append({
-                            'device_path': f'/dev/snd/pcmC{card_num}D{device_num}c',
-                            'name': f'{device_desc.strip()}',
-                            'type': 'マイク',
-                            'card': f'Card {card_num}',
-                            'device': f'Device {device_num}',
-                            'status': 'available',
-                            'method': 'alsa'
-                        })
-        except FileNotFoundError:
-            print("arecord command not found")
-        except Exception as e:
-            print(f"Audio device detection error: {e}")
-        
-        # PulseAudioデバイスの検出（バックアップ）
-        if not devices:
-            try:
-                result = subprocess.run(['pactl', 'list', 'short', 'sources'], 
-                                      capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    lines = result.stdout.strip().split('\n')
-                    for line in lines:
-                        if line.strip():
-                            parts = line.split('\t')
-                            if len(parts) >= 2:
-                                source_name = parts[1]
-                                if 'monitor' not in source_name.lower():  # モニターソースを除外
-                                    devices.append({
-                                        'device_path': source_name,
-                                        'name': source_name.replace('alsa_input.', '').replace('_', ' '),
-                                        'type': 'マイク',
-                                        'status': 'available',
-                                        'method': 'pulseaudio'
-                                    })
-            except FileNotFoundError:
-                print("pactl command not found")
-            except Exception as e:
-                print(f"PulseAudio device detection error: {e}")
-        
-        return devices
-        
-    except Exception as e:
-        print(f"Audio devices scan error: {e}")
-        return []
-
-def get_gps_devices():
-    """GPSデバイスの検出"""
-    try:
-        devices = []
-        
-        # USB GPSデバイスの検出
-        try:
-            result = subprocess.run(['lsusb'], capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                lines = result.stdout.split('\n')
-                for line in lines:
-                    line_lower = line.lower()
-                    if any(keyword in line_lower for keyword in ['gps', 'gnss', 'navigation', 'garmin', 'u-blox']):
-                        # Bus 001 Device 003: ID 1234:5678 Company GPS Device
-                        match = re.match(r'Bus\s+(\d+)\s+Device\s+(\d+):\s+ID\s+([0-9a-f]{4}):([0-9a-f]{4})\s+(.*)', line, re.IGNORECASE)
-                        if match:
-                            bus, device, vendor_id, product_id, description = match.groups()
-                            devices.append({
-                                'device_path': f'/dev/bus/usb/{bus.zfill(3)}/{device.zfill(3)}',
-                                'name': description.strip(),
-                                'type': 'GPS',
-                                'vendor_id': vendor_id,
-                                'product_id': product_id,
-                                'status': 'connected',
-                                'method': 'usb'
-                            })
-        except FileNotFoundError:
-            print("lsusb command not found")
-        except Exception as e:
-            print(f"USB GPS detection error: {e}")
-        
-        # シリアルGPSデバイスの検出
-        try:
-            import glob
-            # 一般的なGPSデバイスパス
-            gps_paths = glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*') + glob.glob('/dev/serial/by-id/*GPS*') + glob.glob('/dev/serial/by-id/*gps*')
-            
-            for device_path in gps_paths:
-                try:
-                    # デバイスの存在確認
-                    import os
-                    if os.path.exists(device_path):
-                        device_name = os.path.basename(device_path)
-                        devices.append({
-                            'device_path': device_path,
-                            'name': f'Serial GPS ({device_name})',
-                            'type': 'GPS',
-                            'status': 'detected',
-                            'method': 'serial'
-                        })
-                except Exception as e:
-                    print(f"Serial GPS check error for {device_path}: {e}")
-        except Exception as e:
-            print(f"Serial GPS detection error: {e}")
-        
-        return devices
-        
-    except Exception as e:
-        print(f"GPS devices scan error: {e}")
-        return []
-
-def get_wifi_signal_strength():
-    try:
-        # 方法1: iwconfig コマンド
-        try:
-            result = subprocess.run(['iwconfig'], capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                output = result.stdout
-                
-                # 信号強度とSSIDを抽出
-                signal_match = re.search(r'Signal level=(-\d+)', output)
-                ssid_match = re.search(r'ESSID:"([^"]*)"', output)
-                
-                signal_strength = None
-                ssid = None
-                signal_dbm = None
-                
-                if signal_match:
-                    signal_dbm = int(signal_match.group(1))
-                    # dBmを％に変換（概算）
-                    if signal_dbm >= -50:
-                        signal_strength = 100
-                    elif signal_dbm >= -60:
-                        signal_strength = 80
-                    elif signal_dbm >= -70:
-                        signal_strength = 60
-                    elif signal_dbm >= -80:
-                        signal_strength = 40
-                    else:
-                        signal_strength = 20
-                        
-                if ssid_match:
-                    ssid = ssid_match.group(1)
-                    
-                return signal_strength, ssid, signal_dbm
-                
-        except FileNotFoundError:
-            print("iwconfig not found, trying alternative methods...")
-        
-        # 方法2: nmcli コマンド（NetworkManager）
-        try:
-            result = subprocess.run(['nmcli', '-t', '-f', 'active,ssid,signal', 'dev', 'wifi'], 
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                for line in lines:
-                    if line.startswith('yes:'):
-                        parts = line.split(':')
-                        if len(parts) >= 3:
-                            ssid = parts[1]
-                            signal = parts[2]
-                            if signal and signal.isdigit():
-                                return int(signal), ssid, None
-        except FileNotFoundError:
-            print("nmcli not found")
-        
-        # 方法3: /proc/net/wireless ファイル読み取り
-        try:
-            with open('/proc/net/wireless', 'r') as f:
-                lines = f.readlines()
-                if len(lines) > 2:  # ヘッダー行をスキップ
-                    for line in lines[2:]:
-                        parts = line.split()
-                        if len(parts) >= 4:
-                            interface = parts[0].rstrip(':')
-                            link_quality = parts[2]  # リンク品質
-                            if '/' in link_quality:
-                                current, max_val = link_quality.split('/')
-                                if current.isdigit() and max_val.isdigit():
-                                    signal_strength = int((int(current) / int(max_val)) * 100)
-                                    return signal_strength, f"WiFi-{interface}", None
-        except (FileNotFoundError, IOError, ValueError):
-            print("/proc/net/wireless not available")
-        
-        # 方法4: iw コマンド
-        try:
-            # アクティブなワイヤレスインターフェースを取得
-            result = subprocess.run(['iw', 'dev'], capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                interface_match = re.search(r'Interface (\w+)', result.stdout)
-                if interface_match:
-                    interface = interface_match.group(1)
-                    
-                    # 接続情報を取得
-                    link_result = subprocess.run(['iw', interface, 'link'], 
-                                                capture_output=True, text=True, timeout=5)
-                    if link_result.returncode == 0:
-                        ssid_match = re.search(r'SSID: (.*)', link_result.stdout)
-                        signal_match = re.search(r'signal: (-\d+)', link_result.stdout)
-                        
-                        ssid = ssid_match.group(1) if ssid_match else None
-                        signal_dbm = int(signal_match.group(1)) if signal_match else None
-                        
-                        if signal_dbm:
-                            # dBmを％に変換
-                            if signal_dbm >= -50:
-                                signal_strength = 100
-                            elif signal_dbm >= -60:
-                                signal_strength = 80
-                            elif signal_dbm >= -70:
-                                signal_strength = 60
-                            elif signal_dbm >= -80:
-                                signal_strength = 40
-                            else:
-                                signal_strength = 20
-                            
-                            return signal_strength, ssid, signal_dbm
-        except FileNotFoundError:
-            print("iw command not found")
-        
-        # すべての方法が失敗した場合
-        print("No WiFi information method available")
-        return None, "WiFi情報取得不可", None
-        
-    except Exception as e:
-        print(f"WiFi info error: {e}")
-        return None, "エラー", None
-
-def ping_test(host='8.8.8.8', count=3):
-    """Ping レイテンシテスト"""
-    try:
-        result = subprocess.run(
-            ['ping', '-c', str(count), host], 
-            capture_output=True, text=True, timeout=10
-        )
-        
-        if result.returncode == 0:
-            # 平均レイテンシを抽出
-            match = re.search(r'rtt min/avg/max/mdev = [\d.]+/([\d.]+)', result.stdout)
-            if match:
-                return float(match.group(1))
-        return None
-        
-    except Exception as e:
-        print(f"Ping error: {e}")
-        return None
-
-def internet_speed_test():
-    """簡易インターネット速度テスト"""
-    try:
-        # 小さなファイルをダウンロードして速度測定
-        start_time = time.time()
-        response = requests.get('http://httpbin.org/bytes/1048576', timeout=10)  # 1MB
-        end_time = time.time()
-        
-        if response.status_code == 200:
-            duration = end_time - start_time
-            size_mb = len(response.content) / (1024 * 1024)
-            speed_mbps = (size_mb * 8) / duration  # Mbps
-            return round(speed_mbps, 2)
-            
-    except Exception as e:
-        print(f"Speed test error: {e}")
-        
-    return None
-
-def get_network_interfaces():
-    """ネットワークインターフェース情報取得"""
-    try:
-        interfaces = []
-        for interface, addrs in psutil.net_if_addrs().items():
-            if_stats = psutil.net_if_stats().get(interface)
-            
-            # IPアドレス取得
-            ip_addresses = []
-            for addr in addrs:
-                if addr.family.name in ['AF_INET', 'AF_INET6']:
-                    ip_addresses.append({
-                        'family': addr.family.name,
-                        'address': addr.address
-                    })
-            
-            if ip_addresses and if_stats:
-                interfaces.append({
-                    'name': interface,
-                    'ip_addresses': ip_addresses,
-                    'is_up': if_stats.isup,
-                    'speed': if_stats.speed if if_stats.speed > 0 else None
-                })
-                
-        return interfaces
-        
-    except Exception as e:
-        print(f"Interface error: {e}")
-        return []
-
-def get_tailscale_status():
-    """Tailscale状態確認"""
-    try:
-        # Tailscale IP取得
-        result_ip = subprocess.run(['tailscale', 'ip', '-4'], 
-                                 capture_output=True, text=True, timeout=5)
-        
-        # Tailscale状態取得
-        result_status = subprocess.run(['tailscale', 'status'], 
-                                     capture_output=True, text=True, timeout=5)
-        
-        if result_ip.returncode == 0 and result_status.returncode == 0:
-            ip = result_ip.stdout.strip()
-            return 'connected', ip
-        else:
-            return 'disconnected', None
-            
-    except Exception as e:
-        print(f"Tailscale check error: {e}")
-        return 'unknown', None
-
-def update_network_data():
-    """ネットワークデータ更新（バックグラウンド実行用）"""
-    device_scan_counter = 0
-    
-    while True:
-        try:
-            print("Updating network data...")
-            
-            # 接続タイプ判定
-            connection_type, interface = get_connection_type()
-            network_data['connection_type'] = connection_type
-            network_data['primary_interface'] = interface
-            
-            # Ping レイテンシ
-            latency = ping_test()
-            network_data['ping_latency'] = latency
-            
-            # ネットワークインターフェース
-            interfaces = get_network_interfaces()
-            network_data['network_interfaces'] = interfaces
-            
-            # Tailscale状態
-            ts_status, ts_ip = get_tailscale_status()
-            network_data['tailscale_status'] = ts_status
-            network_data['tailscale_ip'] = ts_ip
-            
-            # 接続状態判定
-            if latency is not None:
-                network_data['connection_status'] = 'connected'
-            else:
-                network_data['connection_status'] = 'disconnected'
-            
-            # インターネット速度（時々測定）
-            if int(time.time()) % 60 == 0:  # 1分に1回
-                speed = internet_speed_test()
-                network_data['internet_speed'] = speed
-            
-            # 接続機器スキャン（重い処理なので頻度を下げる）
-            device_scan_counter += 1
-            if device_scan_counter >= 6:  # 60秒に1回（10秒 x 6回）
-                print("Scanning for connected devices...")
-                devices = get_connected_devices()
-                network_data['connected_devices'] = devices
-                print(f"Found {len(devices)} connected devices")
-                device_scan_counter = 0
-            
-            network_data['last_update'] = datetime.now().strftime('%H:%M:%S')
-            print(f"Network data updated: {network_data['connection_status']}")
-            
-        except Exception as e:
-            print(f"Network update error: {e}")
-            network_data['connection_status'] = 'error'
-        
-        time.sleep(10)  # 10秒ごとに更新
+# ========================================
+# メインページ
+# ========================================
 
 @app.route('/')
 def index():
     """メイン画面"""
     return render_template('network_monitor.html')
 
+# ========================================
+# ネットワーク監視API
+# ========================================
+
 @app.route('/api/network-status')
 def network_status():
     """ネットワーク状態API"""
-    return jsonify(network_data)
+    return jsonify(network_monitor.get_data())
 
 @app.route('/api/ping-test')
 def api_ping_test():
     """オンデマンドPingテスト"""
-    host = request.args.get('host', '8.8.8.8')
-    latency = ping_test(host)
+    host = request.args.get('host', settings.network['ping_host'])
+    latency = network_monitor.ping_test(host, settings.network['ping_count'])
     return jsonify({
         'host': host,
         'latency': latency,
@@ -556,7 +110,7 @@ def api_ping_test():
 @app.route('/api/speed-test')
 def api_speed_test():
     """オンデマンド速度テスト"""
-    speed = internet_speed_test()
+    speed = network_monitor.internet_speed_test()
     return jsonify({
         'speed_mbps': speed,
         'status': 'success' if speed else 'failed',
@@ -566,7 +120,8 @@ def api_speed_test():
 @app.route('/api/device-scan')
 def api_device_scan():
     """オンデマンド機器スキャン"""
-    devices = get_connected_devices()
+    # デバイス検出機能は将来実装
+    devices = []
     return jsonify({
         'devices': devices,
         'count': len(devices),
@@ -574,7 +129,188 @@ def api_device_scan():
         'status': 'success' if devices else 'no_devices_found'
     })
 
-# Google Drive関連ルート
+# ========================================
+# 録音機能API
+# ========================================
+
+@app.route('/recording')
+def recording_page():
+    """録音機能画面"""
+    return render_template('recording.html')
+
+@app.route('/api/recording/devices')
+def api_recording_devices():
+    """利用可能な録音デバイス一覧"""
+    devices = audio_recorder.get_audio_devices()
+    return jsonify({
+        'devices': devices,
+        'count': len(devices),
+        'timestamp': datetime.now().strftime('%H:%M:%S')
+    })
+
+@app.route('/api/recording/start', methods=['POST'])
+def api_recording_start():
+    """録音開始API"""
+    try:
+        data = request.get_json() or {}
+        duration = int(data.get('duration', settings.recording['default_duration']))
+        device_id = data.get('device_id', 'default')
+        sample_rate = int(data.get('sample_rate', settings.recording['default_sample_rate']))
+        channels = int(data.get('channels', settings.recording['default_channels']))
+        
+        if duration < 1 or duration > 3600:
+            return jsonify({
+                'success': False,
+                'message': '録音時間は1秒から3600秒の間で指定してください'
+            }), 400
+        
+        result = audio_recorder.start_recording(duration, device_id, sample_rate, channels)
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'録音開始エラー: {str(e)}'
+        }), 500
+
+@app.route('/api/recording/stop', methods=['POST'])
+def api_recording_stop():
+    """録音停止API"""
+    try:
+        result = audio_recorder.stop_recording()
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'録音停止エラー: {str(e)}'
+        }), 500
+
+@app.route('/api/recording/status')
+def api_recording_status():
+    """録音状態API"""
+    return jsonify(audio_recorder.get_status())
+
+@app.route('/api/recording/list')
+def api_recording_list():
+    """録音ファイル一覧"""
+    try:
+        files = audio_recorder.list_recordings()
+        return jsonify({
+            'files': files,
+            'count': len(files),
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': f'ファイル一覧取得エラー: {str(e)}'
+        }), 500
+
+@app.route('/api/recording/download/<filename>')
+def api_recording_download(filename):
+    """録音ファイルダウンロード"""
+    try:
+        filepath = audio_recorder.get_file_path(filename)
+        
+        if not filepath:
+            return jsonify({
+                'error': 'ファイルが見つかりません'
+            }), 404
+        
+        return send_file(filepath, as_attachment=True)
+        
+    except Exception as e:
+        return jsonify({
+            'error': f'ダウンロードエラー: {str(e)}'
+        }), 500
+
+@app.route('/api/recording/upload-to-gdrive/<filename>', methods=['POST'])
+def api_recording_upload_to_gdrive(filename):
+    """録音ファイルをGoogle Driveにアップロード"""
+    global gdrive_data
+    
+    if not gdrive_manager:
+        return jsonify({
+            'success': False,
+            'message': 'Google Drive機能が無効です'
+        }), 500
+    
+    try:
+        # ファイルパスを取得
+        filepath = audio_recorder.get_file_path(filename)
+        
+        if not filepath:
+            return jsonify({
+                'success': False,
+                'message': 'ファイルが見つかりません'
+            }), 404
+        
+        # Google Driveにアップロード
+        result = gdrive_manager.upload_file(filepath, filename)
+        
+        # アップロード結果を保存
+        if result['success']:
+            gdrive_data['last_upload'] = {
+                'filename': result['filename'],
+                'upload_time': result['upload_time'],
+                'data_type': 'audio_recording',
+                'file_id': result.get('file_id'),
+                'web_link': result.get('web_link'),
+                'file_size': result.get('file_size')
+            }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'アップロードエラー: {str(e)}'
+        }), 500
+
+@app.route('/api/gdrive-files')
+def api_gdrive_files():
+    """ファイル一覧API"""
+    if not gdrive_manager:
+        return jsonify({
+            'success': False,
+            'message': 'Google Drive機能が無効です'
+        }), 500
+    
+    try:
+        limit = int(request.args.get('limit', 20))
+        result = gdrive_manager.list_files(limit)
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'ファイル一覧取得エラー: {str(e)}'
+        }), 500
+
+@app.route('/api/gdrive-delete/<file_id>', methods=['DELETE'])
+def api_gdrive_delete(file_id):
+    """ファイル削除API"""
+    if not gdrive_manager:
+        return jsonify({
+            'success': False,
+            'message': 'Google Drive機能が無効です'
+        }), 500
+    
+    try:
+        result = gdrive_manager.delete_file(file_id)
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'ファイル削除エラー: {str(e)}'
+        }), 500
+
+# ========================================
+# Google Drive API（既存機能を維持）
+# ========================================
+
 @app.route('/gdrive')
 def gdrive_dashboard():
     """Google Drive状態確認画面"""
@@ -582,12 +318,11 @@ def gdrive_dashboard():
 
 @app.route('/api/gdrive-status')
 def api_gdrive_status():
-    """接続Google Drive状態API"""
+    """Google Drive状態API"""
     global gdrive_data
     
     if gdrive_manager:
         try:
-            # 認証確認（まだ認証していない場合のみ）
             if not gdrive_manager._authenticated:
                 print("Attempting Google Drive authentication...")
                 auth_success = gdrive_manager.authenticate()
@@ -599,7 +334,6 @@ def api_gdrive_status():
                     })
                     return jsonify(gdrive_data)
             
-            # 接続状態確認
             status = gdrive_manager.check_connection()
             gdrive_data.update(status)
             
@@ -635,13 +369,12 @@ def api_test_upload():
         }), 500
     
     try:
-        # リクエストデータ取得
         request_data = request.get_json() or {}
         data_type = request_data.get('data_type', 'test')
         
         # データ生成
         if data_type == 'network':
-            data = DataSource.create_network_data(network_data)
+            data = DataSource.create_network_data(network_monitor.get_data())
         else:
             data = DataSource.create_test_data()
         
@@ -668,13 +401,73 @@ def api_test_upload():
             'message': f'アップロードエラー: {str(e)}'
         }), 500
 
+# ========================================
+# バックグラウンド処理
+# ========================================
+
+def network_monitor_loop():
+    """ネットワーク監視ループ"""
+    device_scan_counter = 0
+    
+    while True:
+        try:
+            # ネットワークデータ更新
+            network_monitor.update_data()
+            
+            # デバイススキャン（頻度を下げる）
+            device_scan_counter += 1
+            if device_scan_counter >= (settings.network['device_scan_interval'] // settings.network['update_interval']):
+                print("Scanning for connected devices...")
+                # デバイス検出機能は将来実装
+                device_scan_counter = 0
+            
+            time.sleep(settings.network['update_interval'])
+            
+        except Exception as e:
+            print(f"Network monitor loop error: {e}")
+            time.sleep(5)
+
+def recording_monitor_loop():
+    """録音監視ループ"""
+    audio_recorder.monitor_recording()
+
+# ========================================
+# アプリケーション起動
+# ========================================
+
 if __name__ == '__main__':
-    # バックグラウンドでネットワーク監視開始
-    network_thread = threading.Thread(target=update_network_data, daemon=True)
+    print("=" * 50)
+    print("🚀 Raspberry Pi モニタリングシステム (モジュラー版)")
+    print("=" * 50)
+    
+    # 設定情報表示
+    print(f"📊 設定情報:")
+    print(f"  - ネットワーク更新間隔: {settings.network['update_interval']}秒")
+    print(f"  - 録音保存先: {audio_recorder.save_directory}")
+    print(f"  - Google Drive: {'有効' if gdrive_manager else '無効'}")
+    
+    # データディレクトリは既に作成済み
+    
+    # バックグラウンド処理開始
+    print("🔄 バックグラウンド処理を開始...")
+    
+    network_thread = threading.Thread(target=network_monitor_loop, daemon=True)
     network_thread.start()
     
-    print("Starting Network Monitor App...")
-    print("Access via: http://localhost:5000")
-    print("Or via Tailscale: http://[tailscale-ip]:5000")
+    recording_thread = threading.Thread(target=recording_monitor_loop, daemon=True)
+    recording_thread.start()
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # アクセス情報表示
+    print("🌐 アクセス情報:")
+    print(f"  - メイン画面: http://localhost:{settings.app['port']}/")
+    print(f"  - 録音機能: http://localhost:{settings.app['port']}/recording")
+    if gdrive_manager:
+        print(f"  - Google Drive: http://localhost:{settings.app['port']}/gdrive")
+    print("=" * 50)
+    
+    # Flaskアプリ開始
+    app.run(
+        host=settings.app['host'],
+        port=settings.app['port'],
+        debug=settings.app['debug']
+    )

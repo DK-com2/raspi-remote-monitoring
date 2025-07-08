@@ -71,9 +71,9 @@ logs/
 *.out
 
 # Google Drive credentials and tokens
-monitoring-system/data/credentials/*.json
-monitoring-system/data/credentials/token.json
-monitoring-system/data/credentials/credentials.json
+data/credentials/*.json
+data/credentials/token.json
+data/credentials/credentials.json
 
 # Uploaded files and temporary data
 monitoring-system/data/uploads/*

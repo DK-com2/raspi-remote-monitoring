@@ -1,8 +1,34 @@
+# Raspberry Pi 監視システム設定ファイル
+# モジュラー版
+
+# アプリケーション基本設定
+app:
+  debug: false
+  host: "0.0.0.0"
+  port: 5000
+
+# ネットワーク監視設定
+network:
+  update_interval: 10          # データ更新間隔（秒）
+  device_scan_interval: 60     # デバイススキャン間隔（秒）
+  ping_host: "8.8.8.8"        # Pingテスト対象ホスト
+  ping_count: 3               # Ping回数
+  speed_test_enabled: true    # インターネット速度テスト有効/無効
+
+# 録音機能設定
+recording:
+  default_duration: 10         # デフォルト録音時間（秒）
+  default_sample_rate: 44100   # デフォルトサンプリングレート
+  default_channels: 2          # デフォルトチャンネル数
+  max_duration: 3600          # 最大録音時間（秒）
+  save_directory: "../data/recordings"  # 録音ファイル保存先
+
+# Google Drive連携設定
 gdrive:
-  # Google Drive設定
-  folder_name: "raspi-monitoring"
-  credentials_file: "data/credentials/credentials.json"
-  token_file: "data/credentials/token.json"
+  folder_name: "raspi-monitoring"  # Google Drive上のフォルダ名
+  credentials_file: "../data/credentials/credentials.json"
+  token_file: "../data/credentials/token.json"
+  auto_upload: false           # 自動アップロード有効/無効
   
   # テストデータ設定
   test_data_types:
@@ -12,9 +38,22 @@ gdrive:
     - name: "ネットワーク状態"
       type: "network"
       description: "現在のネットワーク監視データ"
+    - name: "録音メタデータ"
+      type: "recording"
+      description: "録音ファイルのメタデータ"
 
-# アプリケーション設定
-app:
-  debug: true
-  host: "0.0.0.0"
-  port: 5000
+# ログ設定
+logging:
+  level: "INFO"              # ログレベル（DEBUG, INFO, WARNING, ERROR）
+  file_enabled: false        # ファイルログ出力有効/無効
+  file_path: "../data/logs/app.log"
+
+# セキュリティ設定
+security:
+  allowed_hosts: []          # 許可するホスト（空の場合は全て許可）
+  rate_limit_enabled: false # レート制限有効/無効
+  
+# システム設定
+system:
+  timezone: "Asia/Tokyo"     # タイムゾーン
+  language: "ja"             # 言語設定

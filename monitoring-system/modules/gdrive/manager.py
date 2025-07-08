@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
 Google Drive連携機能
-シンプルで拡張しやすい設計
+Google Drive APIを使ったファイルアップロード・管理を担当
 """
 
 import os
 import json
-import random
 import yaml
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -41,8 +40,8 @@ class GDriveManager:
             return {
                 'gdrive': {
                     'folder_name': 'raspi-monitoring',
-                    'credentials_file': 'data/credentials/credentials.json',
-                    'token_file': 'data/credentials/token.json'
+                    'credentials_file': '../data/credentials/credentials.json',
+                    'token_file': '../data/credentials/token.json'
                 }
             }
     
@@ -237,63 +236,126 @@ class GDriveManager:
                 'success': False,
                 'message': f'アップロードエラー: {str(e)}'
             }
-
-class DataSource:
-    """データソース管理クラス（IoT拡張対応）"""
     
-    @staticmethod
-    def create_test_data() -> Dict[str, Any]:
-        """テスト用ランダムデータ生成"""
-        return {
-            "data_type": "test",
-            "device_id": "test_device_001",
-            "timestamp": datetime.now().isoformat(),
-            "test_value": random.randint(1, 100),
-            "temperature": round(random.uniform(15.0, 35.0), 1),
-            "humidity": round(random.uniform(30.0, 80.0), 1),
-            "status": "test_ok",
-            "battery_level": random.randint(20, 100)
-        }
+    def upload_file(self, file_path: str, filename: str = None) -> Dict[str, Any]:
+        """ファイルをGoogle Driveにアップロード"""
+        try:
+            if not self._authenticated:
+                return {
+                    'success': False,
+                    'message': '認証が必要です'
+                }
+            
+            if not os.path.exists(file_path):
+                return {
+                    'success': False,
+                    'message': f'ファイルが見つかりません: {file_path}'
+                }
+            
+            # ファイル名の決定
+            if not filename:
+                filename = os.path.basename(file_path)
+            
+            # ファイルの MIME タイプを推定
+            if filename.endswith('.wav'):
+                mimetype = 'audio/wav'
+            elif filename.endswith('.mp3'):
+                mimetype = 'audio/mpeg'
+            elif filename.endswith('.json'):
+                mimetype = 'application/json'
+            elif filename.endswith('.txt'):
+                mimetype = 'text/plain'
+            else:
+                mimetype = 'application/octet-stream'
+            
+            # MediaFileUploadを使用してファイルをアップロード
+            media = MediaFileUpload(file_path, mimetype=mimetype)
+            
+            # ファイルメタデータ
+            file_metadata = {
+                'name': filename,
+                'parents': [self.folder_id] if self.folder_id else []
+            }
+            
+            # アップロード実行
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id,name,webViewLink,size'
+            ).execute()
+            
+            return {
+                'success': True,
+                'file_id': file.get('id'),
+                'filename': file.get('name'),
+                'web_link': file.get('webViewLink'),
+                'file_size': file.get('size'),
+                'upload_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': 'ファイルアップロード成功'
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'ファイルアップロードエラー: {str(e)}'
+            }
     
-    @staticmethod
-    def create_network_data(network_data: Dict[str, Any]) -> Dict[str, Any]:
-        """ネットワーク監視データを整形"""
-        data = network_data.copy()
-        data.update({
-            "data_type": "network_monitoring",
-            "timestamp": datetime.now().isoformat(),
-            "source": "raspi_network_monitor"
-        })
-        return data
+    def list_files(self, limit: int = 10) -> Dict[str, Any]:
+        """Google Driveのファイル一覧を取得"""
+        try:
+            if not self._authenticated:
+                return {
+                    'success': False,
+                    'message': '認証が必要です'
+                }
+            
+            # クエリ構築
+            query = f"parents in '{self.folder_id}'" if self.folder_id else None
+            
+            # ファイル一覧取得
+            results = self.service.files().list(
+                q=query,
+                pageSize=limit,
+                fields="files(id,name,mimeType,size,createdTime,webViewLink)",
+                orderBy="createdTime desc"
+            ).execute()
+            
+            files = results.get('files', [])
+            
+            return {
+                'success': True,
+                'files': files,
+                'count': len(files),
+                'folder_id': self.folder_id,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'ファイル一覧取得エラー: {str(e)}'
+            }
     
-    @staticmethod
-    def get_filename(data_type: str) -> str:
-        """ファイル名生成"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return f"{data_type}_{timestamp}.json"
-
-# 将来のIoT拡張用（プレースホルダー）
-class IoTDataSource:
-    """IoTセンサーデータソース（将来実装）"""
-    
-    @staticmethod
-    def create_temperature_data() -> Dict[str, Any]:
-        """温度センサーデータ（将来実装）"""
-        return {
-            "data_type": "temperature_sensor",
-            "sensor_id": "temp_001",
-            "timestamp": datetime.now().isoformat(),
-            "temperature": 25.5,  # 実際のセンサーから取得
-            "location": "room_a"
-        }
-    
-    @staticmethod
-    def create_humidity_data() -> Dict[str, Any]:
-        """湿度センサーデータ（将来実装）"""
-        return {
-            "data_type": "humidity_sensor", 
-            "sensor_id": "humid_001",
-            "timestamp": datetime.now().isoformat(),
-            "humidity": 60.0,  # 実際のセンサーから取得
-            "location": "room_a"
-        }
+    def delete_file(self, file_id: str) -> Dict[str, Any]:
+        """Google Driveからファイルを削除"""
+        try:
+            if not self._authenticated:
+                return {
+                    'success': False,
+                    'message': '認証が必要です'
+                }
+            
+            # ファイル削除
+            self.service.files().delete(fileId=file_id).execute()
+            
+            return {
+                'success': True,
+                'message': 'ファイル削除成功',
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'ファイル削除エラー: {str(e)}'
+            }

@@ -1,7 +1,0 @@
-# 認証情報とアップロードファイルをGit管理から除外
-credentials.json
-token.json
-*.json
-*.csv
-*.txt
-*.log

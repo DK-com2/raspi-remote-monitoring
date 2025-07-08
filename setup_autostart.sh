@@ -1,18 +1,18 @@
 #!/bin/bash
-# ネットワーク監視アプリ 自動起動化・テスト統合スクリプト
-# WSL2 & Raspberry Pi 両環境対応
+# Raspberry Pi 監視システム 自動起動化・テスト統合スクリプト
+# WSL2 & Raspberry Pi 両環境対応 - モジュラー版
 
 set -e
 
-echo "🚀 ネットワーク監視アプリ 統合セットアップ"
-echo "=========================================="
+echo "🚀 Raspberry Pi 監視システム 統合セットアップ"
+echo "=============================================="
 
 # 設定変数（自動検出）
 CURRENT_DIR="$(pwd)"
-PROJECT_DIR="$CURRENT_DIR"
-SERVICE_NAME="network-monitor"
+PROJECT_DIR="$CURRENT_DIR/monitoring-system"
+SERVICE_NAME="raspi-monitoring"
 USER="$(whoami)"
-PYTHON_VENV="$(dirname $CURRENT_DIR)/venv"
+PYTHON_VENV="$CURRENT_DIR/venv"
 
 # カラー定義
 GREEN='\033[0;32m'
@@ -126,7 +126,7 @@ log_info "Python仮想環境確認..."
 if [ ! -d "$PYTHON_VENV" ]; then
     log_error "Python仮想環境が見つかりません: $PYTHON_VENV"
     log_error "先に環境構築を実行してください:"
-    log_error "  cd ../environment-setup && ./setup_all.sh"
+    log_error "  cd environment-setup && ./setup_complete.sh"
     exit 1
 fi
 
@@ -137,11 +137,42 @@ fi
 
 log_info "✅ Python仮想環境確認完了"
 
+# モジュール構造確認
+log_info "モジュール構造確認..."
+if [ ! -d "$PROJECT_DIR/modules" ]; then
+    log_error "modulesディレクトリが見つかりません"
+    exit 1
+fi
+
+if [ ! -d "$PROJECT_DIR/modules/network" ] || [ ! -d "$PROJECT_DIR/modules/recording" ] || [ ! -d "$PROJECT_DIR/modules/gdrive" ]; then
+    log_error "必要なモジュールが見つかりません"
+    log_error "modules/network, modules/recording, modules/gdrive が必要です"
+    exit 1
+fi
+
+log_info "✅ モジュール構造確認完了"
+
 # 依存関係確認
 log_info "Python依存関係確認・インストール..."
 source "$PYTHON_VENV/bin/activate"
-pip install flask psutil requests
+
+# requirements.txtから依存関係インストール
+if [ -f "$PROJECT_DIR/requirements.txt" ]; then
+    pip install -r "$PROJECT_DIR/requirements.txt"
+else
+    # 基本的な依存関係をインストール
+    pip install flask psutil requests google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client pyaudio sounddevice scipy numpy pyyaml
+fi
+
 log_info "✅ 依存関係確認完了"
+
+# データディレクトリ確認・作成
+log_info "データディレクトリ確認..."
+DATA_DIR="$CURRENT_DIR/data"
+mkdir -p "$DATA_DIR/recordings"
+mkdir -p "$DATA_DIR/credentials"
+chown -R $USER:$USER "$DATA_DIR"
+log_info "✅ データディレクトリ設定完了"
 
 # モード別処理
 if [ "$MODE" = "test" ]; then
@@ -151,6 +182,8 @@ if [ "$MODE" = "test" ]; then
     # 本番用設定でコピー作成
     log_info "テスト用設定ファイル作成..."
     cp "$PROJECT_DIR/app.py" "$PROJECT_DIR/app.py.backup"
+    
+    # デバッグモード無効化（本番環境テスト）
     sed 's/debug=True/debug=False/g' "$PROJECT_DIR/app.py" > "$PROJECT_DIR/app_test.py"
     
     # ネットワーク情報表示
@@ -168,18 +201,33 @@ if [ "$MODE" = "test" ]; then
     log_warn "Ctrl+C で停止"
     echo ""
     log_info "アクセスURL:"
-    log_info "  http://localhost:5000"
+    log_info "  メイン画面: http://localhost:5000"
+    log_info "  録音機能: http://localhost:5000/recording"
+    log_info "  Google Drive: http://localhost:5000/gdrive"
     if [ "$ENVIRONMENT" = "wsl2" ]; then
-        log_info "  http://$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost"):5000"
+        LOCAL_IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
+        log_info "  外部アクセス: http://${LOCAL_IP}:5000"
     fi
     echo ""
     
+    # 設定表示
+    log_info "機能の確認:"
+    echo "  ✅ ネットワーク監視"
+    echo "  ✅ 録音機能"
+    if [ -f "$DATA_DIR/credentials/credentials.json" ]; then
+        echo "  ✅ Google Drive連携（認証ファイル有り）"
+    else
+        echo "  ⚠️ Google Drive連携（認証ファイル無し）"
+        echo "     credentials.jsonを $DATA_DIR/credentials/ に配置してください"
+    fi
+    
     # バックグラウンドで起動
-    python "$PROJECT_DIR/app_test.py" &
+    cd "$PROJECT_DIR"
+    python app_test.py &
     APP_PID=$!
     
     # 起動待機
-    sleep 3
+    sleep 5
     
     # HTTP応答確認
     if curl -f -s http://localhost:5000 > /dev/null 2>&1; then
@@ -190,21 +238,35 @@ if [ "$MODE" = "test" ]; then
         log_warn "テスト終了はCtrl+Cを押してください"
         echo ""
         
+        # API エンドポイントテスト
+        log_info "API エンドポイントテスト:"
+        if curl -f -s http://localhost:5000/api/network-status > /dev/null; then
+            echo "  ✅ ネットワーク監視API"
+        else
+            echo "  ❌ ネットワーク監視API"
+        fi
+        
+        if curl -f -s http://localhost:5000/api/recording/devices > /dev/null; then
+            echo "  ✅ 録音デバイスAPI"
+        else
+            echo "  ❌ 録音デバイスAPI"
+        fi
+        
+        if curl -f -s http://localhost:5000/api/gdrive-status > /dev/null; then
+            echo "  ✅ Google Drive API"
+        else
+            echo "  ❌ Google Drive API"
+        fi
+        
+        echo ""
         # フォアグラウンドに戻す
         wait $APP_PID
     else
         log_error "❌ HTTP応答なし (ポート5000)"
-        # ポート8080も試す
-        if curl -f -s http://localhost:8080 > /dev/null 2>&1; then
-            log_info "✅ ポート8080で応答確認"
-            log_warn "⚠️ アプリがポート8080で起動しています"
-            log_info "アクセス: http://localhost:8080"
-            wait $APP_PID
-        else
-            log_error "❌ ポート5000, 8080どちらも応答なし"
-            kill $APP_PID 2>/dev/null || true
-            exit 1
-        fi
+        # エラーログ表示
+        log_error "アプリケーションログ:"
+        kill $APP_PID 2>/dev/null || true
+        exit 1
     fi
     
     # クリーンアップ
@@ -231,8 +293,8 @@ else
     log_info "systemdサービスファイル作成..."
     sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null << EOF
 [Unit]
-Description=Raspberry Pi Network Monitor
-Documentation=Local network monitoring dashboard
+Description=Raspberry Pi Monitoring System (Modular)
+Documentation=Raspberry Pi network monitoring, recording, and Google Drive integration
 After=network-online.target tailscaled.service
 Wants=network-online.target
 RequiresMountsFor=/home
@@ -253,8 +315,8 @@ ExecReload=/bin/kill -HUP \$MAINPID
 
 # 再起動設定
 Restart=always
-RestartSec=10
-StartLimitInterval=60
+RestartSec=15
+StartLimitInterval=120
 StartLimitBurst=3
 
 # ログ設定
@@ -272,6 +334,12 @@ EOF
     
     log_info "✅ systemdサービスファイル作成完了"
     
+    # 権限設定
+    log_info "権限設定..."
+    chown -R $USER:$USER "$PROJECT_DIR"
+    chown -R $USER:$USER "$DATA_DIR"
+    chmod +x "$PROJECT_DIR/app.py"
+    
     # サービス有効化と起動
     log_info "サービス有効化..."
     sudo systemctl daemon-reload
@@ -279,7 +347,7 @@ EOF
     
     log_info "サービス起動テスト..."
     sudo systemctl start ${SERVICE_NAME}.service
-    sleep 5
+    sleep 10
     
     # 起動確認
     if sudo systemctl is-active --quiet ${SERVICE_NAME}.service; then
@@ -292,6 +360,14 @@ EOF
             log_warn "⚠️ ポート5000でリスンしていません"
         fi
         
+        # HTTP応答確認
+        sleep 5
+        if curl -f -s http://localhost:5000 > /dev/null; then
+            log_info "✅ HTTP応答確認成功"
+        else
+            log_warn "⚠️ HTTP応答なし"
+        fi
+        
         # Tailscale IP確認
         if command -v tailscale &> /dev/null; then
             TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo "未設定")
@@ -299,14 +375,24 @@ EOF
             echo "📱 アクセスURL:"
             echo "   ローカル: http://localhost:5000"
             echo "   Tailscale: http://${TAILSCALE_IP}:5000"
+            echo ""
+            echo "   機能別URL:"
+            echo "   📊 メイン画面: http://${TAILSCALE_IP}:5000"
+            echo "   🎤 録音機能: http://${TAILSCALE_IP}:5000/recording"
+            echo "   ☁️ Google Drive: http://${TAILSCALE_IP}:5000/gdrive"
         fi
         
     else
         log_error "❌ サービス起動失敗"
         echo "エラーログ:"
-        sudo journalctl -u ${SERVICE_NAME}.service -n 10 --no-pager
+        sudo journalctl -u ${SERVICE_NAME}.service -n 20 --no-pager
         exit 1
     fi
+    
+    # 音声デバイス権限設定（録音機能用）
+    log_info "音声デバイス権限設定..."
+    sudo usermod -a -G audio $USER
+    log_info "✅ audioグループに追加完了"
     
     # Tailscale自動起動確認
     log_info "Tailscale自動起動確認..."
@@ -340,16 +426,18 @@ EOF
     
     # 自動起動テスト用スクリプト作成
     log_info "テストスクリプト作成..."
-    cat > ${PROJECT_DIR}/test_autostart.sh << 'EOF'
+    cat > ${CURRENT_DIR}/test_autostart.sh << 'EOF'
 #!/bin/bash
-echo "🧪 自動起動テスト"
+echo "🧪 Raspberry Pi 監視システム 自動起動テスト"
+
+SERVICE_NAME="raspi-monitoring"
 
 # サービス状態確認
-if systemctl is-active --quiet network-monitor; then
+if systemctl is-active --quiet $SERVICE_NAME; then
     echo "✅ サービス稼働中"
 else
     echo "❌ サービス停止中"
-    sudo systemctl status network-monitor
+    sudo systemctl status $SERVICE_NAME
     exit 1
 fi
 
@@ -361,29 +449,84 @@ else
     exit 1
 fi
 
+# API エンドポイントテスト
+echo "API エンドポイントテスト:"
+if curl -f -s http://localhost:5000/api/network-status > /dev/null; then
+    echo "  ✅ ネットワーク監視API"
+else
+    echo "  ❌ ネットワーク監視API"
+fi
+
+if curl -f -s http://localhost:5000/api/recording/devices > /dev/null; then
+    echo "  ✅ 録音デバイスAPI"
+else
+    echo "  ❌ 録音デバイスAPI"
+fi
+
+if curl -f -s http://localhost:5000/api/gdrive-status > /dev/null; then
+    echo "  ✅ Google Drive API"
+else
+    echo "  ❌ Google Drive API"
+fi
+
 # Tailscale IP表示
 if command -v tailscale &> /dev/null; then
     TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo "未設定")
-    echo "📱 アクセス: http://${TAILSCALE_IP}:5000"
+    echo ""
+    echo "📱 アクセス:"
+    echo "   メイン: http://${TAILSCALE_IP}:5000"
+    echo "   録音: http://${TAILSCALE_IP}:5000/recording"
+    echo "   Drive: http://${TAILSCALE_IP}:5000/gdrive"
 fi
 
 echo "🎉 自動起動テスト成功"
 EOF
     
-    chmod +x ${PROJECT_DIR}/test_autostart.sh
+    chmod +x ${CURRENT_DIR}/test_autostart.sh
     log_info "✅ テストスクリプト作成完了"
+    
+    # 設定情報ファイル作成
+    log_info "設定情報ファイル作成..."
+    cat > ${CURRENT_DIR}/system_info.txt << EOF
+Raspberry Pi 監視システム - 設定情報
+====================================
+
+セットアップ日時: $(date)
+プロジェクトディレクトリ: ${PROJECT_DIR}
+データディレクトリ: ${DATA_DIR}
+Python仮想環境: ${PYTHON_VENV}
+
+systemdサービス名: ${SERVICE_NAME}
+
+利用可能な機能:
+- ネットワーク監視
+- 録音機能
+- Google Drive連携
+
+管理コマンド:
+- sudo systemctl status ${SERVICE_NAME}
+- sudo systemctl restart ${SERVICE_NAME}
+- sudo journalctl -u ${SERVICE_NAME} -f
+
+テストコマンド:
+- ./test_autostart.sh
+
+Google Drive設定:
+- 認証ファイル: ${DATA_DIR}/credentials/credentials.json
+- トークンファイル: ${DATA_DIR}/credentials/token.json
+EOF
     
     # 完了メッセージ
     echo ""
-    echo "🎉 本番自動起動化設定完了！"
-    echo "============================="
+    echo "🎉 Raspberry Pi 監視システム 本番自動起動化設定完了！"
+    echo "======================================================"
     log_info "次回OS再起動時から自動的にアプリが起動します"
     
     echo ""
     echo "📋 確認コマンド:"
     echo "   sudo systemctl status ${SERVICE_NAME}"
     echo "   sudo journalctl -u ${SERVICE_NAME} -f"
-    echo "   ${PROJECT_DIR}/test_autostart.sh"
+    echo "   ./test_autostart.sh"
     
     echo ""
     echo "🔧 管理コマンド:"
@@ -393,8 +536,22 @@ EOF
     echo "   sudo systemctl disable ${SERVICE_NAME}  # 自動起動無効化"
     
     echo ""
+    echo "📱 利用可能な機能:"
+    echo "   📊 ネットワーク監視: リアルタイムネットワーク状態"
+    echo "   🎤 録音機能: 音声録音・Google Driveアップロード"
+    echo "   ☁️ Google Drive連携: データ自動バックアップ"
+    
+    echo ""
+    echo "🔧 Google Drive設定:"
+    echo "   1. Google Cloud Consoleでプロジェクト作成"
+    echo "   2. Drive APIを有効化"
+    echo "   3. 認証情報(JSON)をダウンロード"
+    echo "   4. ${DATA_DIR}/credentials/credentials.json に配置"
+    
+    echo ""
     echo "📱 アクセス方法:"
     echo "   Tailscale設定後、スマホから http://[TailscaleのIP]:5000"
+    echo "   各機能は /recording、/gdrive でアクセス可能"
     
     # 再起動提案
     echo ""
@@ -406,5 +563,6 @@ EOF
         sudo reboot
     else
         log_info "手動で再起動してテストしてください: sudo reboot"
+        log_info "再起動後は ./test_autostart.sh でテスト可能です"
     fi
 fi
