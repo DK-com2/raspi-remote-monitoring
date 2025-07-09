@@ -431,23 +431,36 @@ check_status() {
 case $SETUP_MODE in
     "1")
         log_info "🏠 新規セットアップモードを選択"
-        # 既存のセットアップロジックを実行
+        setup_new_installation
         ;;
+    "2")
+        log_info "🔄 環境リセットモードを選択"
+        reset_environment
+        ;;
+    "3")
+        log_info "🧪 テストモードを選択"
+        run_test_mode
+        ;;
+    "4")
+        log_info "📋 状態確認モードを選択"
+        check_status
+        ;;
+    "5")
+        log_info "🗑️ 完全アンインストールモードを選択"
+        uninstall_completely
+        ;;
+    *)
+        log_error "無効な選択です: $SETUP_MODE"
+        log_error "1-5の数字を選択してください"
+        exit 1
+        ;;
+esac
 
-case $ENVIRONMENT in
-    "wsl2")
-        log_info "🐧 WSL2環境を検出"
-        echo "実行モードを選択してください:"
-        echo "  1) テストモード（手動起動・終了）"
-        echo "  2) systemd設定モード（自動起動設定）"
-        read -p "選択 (1/2): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[2]$ ]]; then
-            # WSL2でsystemd有効化確認
-            if ! systemctl is-system-running >/dev/null 2>&1; then
-                log_warn "⚠️ WSL2でsystemdが無効です"
-                echo "systemdを有効化しますか？"
-                echo "※ /etc/wsl.conf を編集してWSL再起動が必要です"
+# ==================== 新規セットアップ関数 ====================
+setup_new_installation() {
+    log_info "🏠 新規セットアップ開始..."
+    
+    # 環境別処理
                 read -p "有効化する (y/N): " -n 1 -r
                 echo
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -625,12 +638,242 @@ if [ "$MODE" = "test" ]; then
         
         # API エンドポイントテスト
         log_info "API エンドポイントテスト:"
-        if curl -f -s http://localhost:5000/api/network-status > /dev/null; then
-            echo "  ✅ ネットワーク監視API"
+        if curl -f -s http://localhost:5000/api/recording/devices > /dev/null; then
+            echo "  ✅ 録音デバイスAPI"
         else
-            echo "  ❌ ネットワーク監視API"
+            echo "  ❌ 録音デバイスAPI"
         fi
         
+        if curl -f -s http://localhost:5000/api/gdrive-status > /dev/null; then
+            echo "  ✅ Google Drive API"
+        else
+            echo "  ❌ Google Drive API"
+        fi
+        
+        echo ""
+        # フォアグラウンドに戻す
+        wait $APP_PID
+    else
+        log_error "❌ HTTP応答なし (ポート5000)"
+        kill $APP_PID 2>/dev/null || true
+        exit 1
+    fi
+}
+
+# ==================== 本番モード設定関数 ====================
+setup_production_mode() {
+    log_info "🏭 本番セットアップモード実行中..."
+    
+    # 本番用設定変更
+    log_info "本番用設定に変更..."
+    cp "$PROJECT_DIR/app.py" "$PROJECT_DIR/app.py.backup"
+    sed -i 's/debug=True/debug=False/g' "$PROJECT_DIR/app.py"
+    log_info "✅ デバッグモード無効化"
+    
+    # systemdサービスファイル作成
+    log_info "systemdサービスファイル作成..."
+    sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null << EOF
+[Unit]
+Description=Raspberry Pi Monitoring System (Modular)
+Documentation=Raspberry Pi network monitoring, recording, and Google Drive integration
+After=network-online.target tailscaled.service
+Wants=network-online.target
+RequiresMountsFor=/home
+
+[Service]
+Type=simple
+User=${USER}
+Group=${USER}
+WorkingDirectory=${PROJECT_DIR}
+Environment=PATH=${PYTHON_VENV}/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=${PROJECT_DIR}
+Environment=PYTHONUNBUFFERED=1
+
+# 起動前の待機（ネットワーク安定化）
+ExecStartPre=/bin/sleep 10
+ExecStart=${PYTHON_VENV}/bin/python ${PROJECT_DIR}/app.py
+ExecReload=/bin/kill -HUP \$MAINPID
+
+# 再起動設定
+Restart=always
+RestartSec=15
+StartLimitInterval=120
+StartLimitBurst=3
+
+# ログ設定
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=${SERVICE_NAME}
+
+# セキュリティ設定
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    log_info "✅ systemdサービスファイル作成完了"
+    
+    # 権限設定
+    log_info "権限設定..."
+    DATA_DIR="$CURRENT_DIR/data"
+    chown -R $USER:$USER "$PROJECT_DIR"
+    chown -R $USER:$USER "$DATA_DIR"
+    chmod +x "$PROJECT_DIR/app.py"
+    
+    # サービス有効化と起動
+    log_info "サービス有効化..."
+    sudo systemctl daemon-reload
+    sudo systemctl enable ${SERVICE_NAME}.service
+    
+    log_info "サービス起動テスト..."
+    sudo systemctl start ${SERVICE_NAME}.service
+    sleep 10
+    
+    # 起動確認
+    if sudo systemctl is-active --quiet ${SERVICE_NAME}.service; then
+        log_info "✅ サービス起動成功"
+        
+        # ポート確認
+        if ss -tlnp | grep -q ":5000"; then
+            log_info "✅ ポート5000でリスン確認"
+        else
+            log_warn "⚠️ ポート5000でリスンしていません"
+        fi
+        
+        # HTTP応答確認
+        sleep 5
+        if curl -f -s http://localhost:5000 > /dev/null; then
+            log_info "✅ HTTP応答確認成功"
+        else
+            log_warn "⚠️ HTTP応答なし"
+        fi
+        
+        # Tailscale IP確認
+        if command -v tailscale &> /dev/null; then
+            TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo "未設定")
+            echo ""
+            echo "📱 アクセスURL:"
+            echo "   ローカル: http://localhost:5000"
+            echo "   Tailscale: http://${TAILSCALE_IP}:5000"
+            echo ""
+            echo "   機能別URL:"
+            echo "   📊 メイン画面: http://${TAILSCALE_IP}:5000"
+            echo "   🎤 録音機能: http://${TAILSCALE_IP}:5000/recording"
+            echo "   ☁️ Google Drive: http://${TAILSCALE_IP}:5000/gdrive"
+        fi
+        
+    else
+        log_error "❌ サービス起動失敗"
+        echo "エラーログ:"
+        sudo journalctl -u ${SERVICE_NAME}.service -n 20 --no-pager
+        exit 1
+    fi
+    
+    # 音声デバイス権限設定（録音機能用）
+    log_info "音声デバイス権限設定..."
+    sudo usermod -a -G audio $USER
+    log_info "✅ audioグループに追加完了"
+    
+    # Tailscale自動起動確認
+    log_info "Tailscale自動起動確認..."
+    if command -v tailscale &> /dev/null; then
+        sudo systemctl enable tailscaled.service
+        log_info "✅ Tailscale自動起動設定完了"
+    else
+        log_warn "⚠️ Tailscaleが未インストールです"
+        echo "   以下でインストール可能:"
+        echo "   curl -fsSL https://tailscale.com/install.sh | sh"
+        echo "   sudo tailscale up"
+    fi
+    
+    # SSH自動起動確認
+    log_info "SSH自動起動確認..."
+    sudo systemctl enable ssh.service
+    log_info "✅ SSH自動起動設定完了"
+    
+    # ファイアウォール設定（Tailscale使用のためスキップ）
+    log_info "ファイアウォール設定確認..."
+    if command -v ufw &> /dev/null; then
+        # Tailscale使用時はポート開放不要
+        # SSHのみ許可（ローカルネットワーク用）
+        sudo ufw --force enable
+        sudo ufw allow ssh
+        log_info "✅ SSH用ファイアウォール設定完了（Tailscale使用）"
+        log_info "ℹ️ Tailscale VPN経由のアクセスのためポート5000開放は不要"
+    else
+        log_info "ℹ️ UFW未インストール - Tailscale使用時は問題なし"
+    fi
+    
+    # 自動起動テスト用スクリプト作成
+    create_test_scripts
+    
+    # 完了メッセージ
+    show_completion_message
+}
+
+# ==================== テストスクリプト作成関数 ====================
+create_test_scripts() {
+    log_info "テストスクリプト作成..."
+    cat > ${CURRENT_DIR}/test_autostart.sh << 'EOF'
+#!/bin/bash
+echo "🧪 Raspberry Pi 監視システム 自動起動テスト"
+
+SERVICE_NAME="raspi-monitoring"
+
+# サービス状態確認
+if systemctl is-active --quiet $SERVICE_NAME; then
+    echo "✅ サービス稼働中"
+else
+    echo "❌ サービス停止中"
+    sudo systemctl status $SERVICE_NAME
+    exit 1
+fi
+
+# HTTP応答確認
+if curl -f -s http://localhost:5000 > /dev/null; then
+    echo "✅ HTTP応答正常"
+else
+    echo "❌ HTTP応答なし"
+    exit 1
+fi
+
+# API エンドポイントテスト
+echo "API エンドポイントテスト:"
+if curl -f -s http://localhost:5000/api/network-status > /dev/null; then
+    echo "  ✅ ネットワーク監視API"
+else
+    echo "  ❌ ネットワーク監視API"
+fi
+
+if curl -f -s http://localhost:5000/api/recording/devices > /dev/null; then
+    echo "  ✅ 録音デバイスAPI"
+else
+    echo "  ❌ 録音デバイスAPI"
+fi
+
+if curl -f -s http://localhost:5000/api/gdrive-status > /dev/null; then
+    echo "  ✅ Google Drive API"
+else
+    echo "  ❌ Google Drive API"
+fi
+
+# Tailscale IP表示
+if command -v tailscale &> /dev/null; then
+    TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo "未設定")
+    echo ""
+    echo "📱 アクセス:"
+    echo "   メイン: http://${TAILSCALE_IP}:5000"
+    echo "   録音: http://${TAILSCALE_IP}:5000/recording"
+    echo "   Drive: http://${TAILSCALE_IP}:5000/gdrive"
+fi
+
+echo "🎉 自動起動テスト成功"
+EOF
+    
+    chmod +x ${CURRENT_DIR}/test_autostart.sh
+    log_info "✅ テストスクリプト作成完了"
         if curl -f -s http://localhost:5000/api/recording/devices > /dev/null; then
             echo "  ✅ 録音デバイスAPI"
         else
