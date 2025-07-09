@@ -433,6 +433,7 @@ case $SETUP_MODE in
         log_info "🏠 新規セットアップモードを選択"
         # 既存のセットアップロジックを実行
         ;;
+        ;;
 
 case $ENVIRONMENT in
     "wsl2")
