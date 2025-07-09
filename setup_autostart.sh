@@ -461,43 +461,265 @@ setup_new_installation() {
     log_info "🏠 新規セットアップ開始..."
     
     # 環境別処理
-                read -p "有効化する (y/N): " -n 1 -r
-                echo
-                if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    sudo mkdir -p /etc
-                    echo "[boot]" | sudo tee /etc/wsl.conf
-                    echo "systemd=true" | sudo tee -a /etc/wsl.conf
-                    log_info "✅ systemd設定完了"
-                    log_warn "WSLを再起動してください: wsl --shutdown"
-                    exit 0
+    case $ENVIRONMENT in
+        "wsl2")
+            log_info "🐧 WSL2環境を検出"
+            echo "実行モードを選択してください:"
+            echo "  1) テストモード（手動起動・終了）"
+            echo "  2) systemd設定モード（自動起動設定）"
+            read -p "選択 (1/2): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[2]$ ]]; then
+                # WSL2でsystemd有効化確認
+                if ! systemctl is-system-running >/dev/null 2>&1; then
+                    log_warn "⚠️ WSL2でsystemdが無効です"
+                    echo "systemdを有効化しますか？"
+                    echo "※ /etc/wsl.conf を編集してWSL再起動が必要です"
+                    read -p "有効化する (y/N): " -n 1 -r
+                    echo
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        sudo mkdir -p /etc
+                        echo "[boot]" | sudo tee /etc/wsl.conf
+                        echo "systemd=true" | sudo tee -a /etc/wsl.conf
+                        log_info "✅ systemd設定完了"
+                        log_warn "WSLを再起動してください: wsl --shutdown"
+                        exit 0
+                    else
+                        log_info "テストモードで実行します"
+                        MODE="test"
+                    fi
                 else
-                    log_info "テストモードで実行します"
-                    MODE="test"
+                    log_info "systemd有効 - 本番設定を実行"
+                    MODE="production"
                 fi
             else
-                log_info "systemd有効 - 本番設定を実行"
-                MODE="production"
+                MODE="test"
             fi
-        else
-            MODE="test"
-        fi
-        ;;
-    "raspberry_pi")
-        log_info "🍓 Raspberry Pi環境を検出 - 本番セットアップモード"
-        MODE="production"
-        ;;
-    "linux")
-        log_warn "⚠️ 一般Linux環境を検出"
-        echo "本番セットアップを実行しますか？ (y/N): "
-        read -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            ;;
+        "raspberry_pi")
+            log_info "🍓 Raspberry Pi環境を検出 - 本番セットアップモード"
             MODE="production"
+            ;;
+        "linux")
+            log_warn "⚠️ 一般Linux環境を検出"
+            echo "本番セットアップを実行しますか？ (y/N): "
+            read -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                MODE="production"
+            else
+                MODE="test"
+            fi
+            ;;
+    esac
+
+    log_info "実行モード: $MODE"
+    echo ""
+
+    # 共通: 基本チェック
+    log_info "基本環境チェック..."
+
+    if [ ! -d "$PROJECT_DIR" ]; then
+        log_error "プロジェクトディレクトリが見つかりません: $PROJECT_DIR"
+        exit 1
+    fi
+
+    if [ ! -f "$PROJECT_DIR/app.py" ]; then
+        log_error "app.pyが見つかりません: $PROJECT_DIR/app.py"
+        log_info "ファイル一覧:"
+        ls -la "$PROJECT_DIR/"
+        exit 1
+    fi
+
+    log_info "✅ プロジェクトファイル確認完了"
+
+    # Python仮想環境確認
+    log_info "Python仮想環境確認..."
+    if [ ! -d "$PYTHON_VENV" ]; then
+        log_error "Python仮想環境が見つかりません: $PYTHON_VENV"
+        log_error "先に環境構築を実行してください:"
+        log_error "  cd environment-setup && ./setup_complete.sh"
+        exit 1
+    fi
+
+    if [ ! -f "$PYTHON_VENV/bin/python" ]; then
+        log_error "Python実行ファイルが見つかりません"
+        exit 1
+    fi
+
+    log_info "✅ Python仮想環境確認完了"
+
+    # モジュール構造確認
+    log_info "モジュール構造確認..."
+    if [ ! -d "$PROJECT_DIR/modules" ]; then
+        log_error "modulesディレクトリが見つかりません"
+        exit 1
+    fi
+
+    if [ ! -d "$PROJECT_DIR/modules/network" ] || [ ! -d "$PROJECT_DIR/modules/recording" ] || [ ! -d "$PROJECT_DIR/modules/gdrive" ]; then
+        log_error "必要なモジュールが見つかりません"
+        log_error "modules/network, modules/recording, modules/gdrive が必要です"
+        exit 1
+    fi
+
+    log_info "✅ モジュール構造確認完了"
+
+    # 依存関係確認
+    log_info "Python依存関係確認・インストール..."
+    source "$PYTHON_VENV/bin/activate"
+
+    # requirements.txtから依存関係インストール
+    if [ -f "$PROJECT_DIR/requirements.txt" ]; then
+        pip install -r "$PROJECT_DIR/requirements.txt"
+    else
+        # 基本的な依存関係をインストール
+        pip install flask psutil requests google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client pyaudio sounddevice scipy numpy pyyaml
+    fi
+
+    log_info "✅ 依存関係確認完了"
+
+    # データディレクトリ確認・作成
+    log_info "データディレクトリ確認..."
+    DATA_DIR="$CURRENT_DIR/data"
+    mkdir -p "$DATA_DIR/recordings"
+    mkdir -p "$DATA_DIR/credentials"
+    chown -R $USER:$USER "$DATA_DIR"
+    log_info "✅ データディレクトリ設定完了"
+
+    # Python仮想環境を非アクティブ化
+    deactivate
+
+    # モード別処理
+    if [ "$MODE" = "test" ]; then
+        run_test_mode
+    else
+        setup_production_mode
+    fi
+}
+
+# ==================== テストモード関数 ====================
+run_test_mode() {
+    log_info "🧪 テストモード実行中..."
+    
+    # 基本チェック
+    if [ ! -d "$PROJECT_DIR" ]; then
+        log_error "プロジェクトディレクトリが見つかりません: $PROJECT_DIR"
+        exit 1
+    fi
+
+    if [ ! -f "$PROJECT_DIR/app.py" ]; then
+        log_error "app.pyが見つかりません: $PROJECT_DIR/app.py"
+        exit 1
+    fi
+
+    if [ ! -d "$PYTHON_VENV" ]; then
+        log_error "Python仮想環境が見つかりません: $PYTHON_VENV"
+        exit 1
+    fi
+    
+    # 本番用設定でコピー作成
+    log_info "テスト用設定ファイル作成..."
+    cp "$PROJECT_DIR/app.py" "$PROJECT_DIR/app.py.backup"
+    
+    # デバッグモード無効化（本番環境テスト）
+    sed 's/debug=True/debug=False/g' "$PROJECT_DIR/app.py" > "$PROJECT_DIR/app_test.py"
+    
+    # ネットワーク情報表示
+    log_info "ネットワーク情報:"
+    echo "  ホスト名: $(hostname)"
+    echo "  IPアドレス:"
+    if command -v ip &> /dev/null; then
+        ip addr show | grep -E 'inet ' | grep -v 127.0.0.1 | awk '{print "    " $2}' | head -3
+    else
+        ifconfig 2>/dev/null | grep -E 'inet ' | grep -v 127.0.0.1 | awk '{print "    " $2}' | head -3
+    fi
+    
+    echo ""
+    log_info "🚀 テストアプリケーション起動"
+    log_warn "Ctrl+C で停止"
+    echo ""
+    log_info "アクセスURL:"
+    log_info "  メイン画面: http://localhost:5000"
+    log_info "  録音機能: http://localhost:5000/recording"
+    log_info "  Google Drive: http://localhost:5000/gdrive"
+    if [ "$ENVIRONMENT" = "wsl2" ]; then
+        LOCAL_IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
+        log_info "  外部アクセス: http://${LOCAL_IP}:5000"
+    fi
+    echo ""
+    
+    # 設定表示
+    log_info "機能の確認:"
+    echo "  ✅ ネットワーク監視"
+    echo "  ✅ 録音機能"
+    DATA_DIR="$CURRENT_DIR/data"
+    if [ -f "$DATA_DIR/credentials/credentials.json" ]; then
+        echo "  ✅ Google Drive連携（認証ファイル有り）"
+    else
+        echo "  ⚠️ Google Drive連携（認証ファイル無し）"
+        echo "     credentials.jsonを $DATA_DIR/credentials/ に配置してください"
+    fi
+    
+    # Python仮想環境をアクティベート
+    source "$PYTHON_VENV/bin/activate"
+    
+    # バックグラウンドで起動
+    cd "$PROJECT_DIR"
+    python app_test.py &
+    APP_PID=$!
+    
+    # クリーンアップ関数
+    cleanup_test() {
+        log_info "テストアプリケーション停止中..."
+        kill $APP_PID 2>/dev/null || true
+        rm -f "$PROJECT_DIR/app_test.py"
+        deactivate 2>/dev/null || true
+        log_info "✅ テスト完了"
+    }
+    
+    trap cleanup_test EXIT
+    
+    # 起動待機
+    sleep 5
+    
+    # HTTP応答確認
+    if curl -f -s http://localhost:5000 > /dev/null 2>&1; then
+        log_info "✅ HTTP応答確認成功"
+        log_info "🎉 アプリケーション正常起動"
+        echo ""
+        log_info "ブラウザでアクセスしてテストしてください"
+        log_warn "テスト終了はCtrl+Cを押してください"
+        echo ""
+        
+        # API エンドポイントテスト
+        log_info "API エンドポイントテスト:"
+        if curl -f -s http://localhost:5000/api/network-status > /dev/null; then
+            echo "  ✅ ネットワーク監視API"
         else
-            MODE="test"
+            echo "  ❌ ネットワーク監視API"
         fi
-        ;;
-esac
+        
+        if curl -f -s http://localhost:5000/api/recording/devices > /dev/null; then
+            echo "  ✅ 録音デバイスAPI"
+        else
+            echo "  ❌ 録音デバイスAPI"
+        fi
+        
+        if curl -f -s http://localhost:5000/api/gdrive-status > /dev/null; then
+            echo "  ✅ Google Drive API"
+        else
+            echo "  ❌ Google Drive API"
+        fi
+        
+        echo ""
+        # フォアグラウンドに戻す
+        wait $APP_PID
+    else
+        log_error "❌ HTTP応答なし (ポート5000)"
+        kill $APP_PID 2>/dev/null || true
+        exit 1
+    fi
+}
 
 log_info "実行モード: $MODE"
 echo ""
