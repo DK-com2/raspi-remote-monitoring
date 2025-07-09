@@ -83,8 +83,38 @@ gdrive_data = {
 
 @app.route('/')
 def index():
-    """メイン画面"""
+    """メインページ（モバイルダッシュボード）"""
+    return render_template('mobile_dashboard.html')
+
+@app.route('/dashboard')
+def mobile_dashboard():
+    """モバイルダッシュボード（メインと同じ）"""
+    return render_template('mobile_dashboard.html')
+
+@app.route('/network-monitor')
+def network_monitor_legacy():
+    """旧メインページ（互換性のため保持）"""
     return render_template('network_monitor.html')
+
+@app.route('/tailscale')
+def tailscale_page():
+    """Tailscale管理ページ"""
+    return render_template('tailscale_manage.html')
+
+@app.route('/crontab')
+def crontab_page():
+    """Crontab管理ページ"""
+    return render_template('crontab_manage.html')
+
+@app.route('/devices')
+def devices_page():
+    """デバイス管理ページ"""
+    return render_template('devices_manage.html')
+
+@app.route('/network')
+def network_page():
+    """モバイル向けネットワーク詳細ページ"""
+    return render_template('network_detail.html')
 
 # ========================================
 # ネットワーク監視API
@@ -128,6 +158,198 @@ def api_device_scan():
         'timestamp': datetime.now().strftime('%H:%M:%S'),
         'status': 'success' if devices else 'no_devices_found'
     })
+
+@app.route('/api/crontab-status')
+def api_crontab_status():
+    """クロンタブ状態確認API"""
+    try:
+        import subprocess
+        # crontab コマンドで現在のジョブ一覧を取得
+        result = subprocess.run(['crontab', '-l'], capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            cron_lines = [line.strip() for line in result.stdout.split('\n') if line.strip() and not line.startswith('#')]
+            active_jobs = len(cron_lines)
+            
+            return jsonify({
+                'status': 'active' if active_jobs > 0 else 'inactive',
+                'active_jobs': active_jobs,
+                'jobs': cron_lines[:5],  # 最初の5個のジョブを表示
+                'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': f'{active_jobs}個のアクティブジョブ' if active_jobs > 0 else 'アクティブなジョブなし'
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'active_jobs': 0,
+                'jobs': [],
+                'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': 'crontabコマンドの実行に失敗しました'
+            })
+            
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'status': 'timeout',
+            'active_jobs': 0,
+            'jobs': [],
+            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'message': 'crontabコマンドがタイムアウトしました'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'active_jobs': 0,
+            'jobs': [],
+            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'message': f'エラー: {str(e)}'
+        })
+
+@app.route('/api/tailscale-status')
+def api_tailscale_status():
+    """Tailscale状態確認API"""
+    try:
+        import subprocess
+        # tailscale status コマンドで状態確認
+        result = subprocess.run(['tailscale', 'status'], capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            status_lines = result.stdout.strip().split('\n')
+            
+            # 基本情報を解析
+            connected = 'offline' not in result.stdout.lower()
+            
+            # IP アドレスを抽出
+            tailscale_ip = None
+            for line in status_lines:
+                if 'self' in line.lower() or line.strip().startswith('100.'):
+                    parts = line.split()
+                    if len(parts) > 0:
+                        tailscale_ip = parts[0]
+                        break
+            
+            # 接続されたデバイス数を取得
+            device_count = len([line for line in status_lines if line.strip() and not line.startswith('#')]) - 1
+            
+            return jsonify({
+                'status': 'connected' if connected else 'disconnected',
+                'ip_address': tailscale_ip,
+                'device_count': max(0, device_count),
+                'devices': status_lines[:10],  # 最初の10個のデバイス
+                'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': 'Tailscale接続中' if connected else 'Tailscale切断中'
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'ip_address': None,
+                'device_count': 0,
+                'devices': [],
+                'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': 'Tailscaleコマンドの実行に失敗しました（未インストールの可能性）'
+            })
+            
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'status': 'timeout',
+            'ip_address': None,
+            'device_count': 0,
+            'devices': [],
+            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'message': 'Tailscaleコマンドがタイムアウトしました'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'ip_address': None,
+            'device_count': 0,
+            'devices': [],
+            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'message': f'エラー: {str(e)}'
+        })
+
+@app.route('/api/tailscale-details')
+def api_tailscale_details():
+    """テイルスケール詳細情報API"""
+    try:
+        import subprocess
+        
+        # Tailscale状態取得
+        status_result = subprocess.run(['tailscale', 'status'], capture_output=True, text=True, timeout=10)
+        
+        # ネットワークモニターから基本情報を取得
+        network_data = network_monitor.get_data()
+        
+        tailscale_info = {
+            'status': network_data.get('tailscale_status', 'unknown'),
+            'ip': network_data.get('tailscale_ip', 'unknown'),
+            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'devices': [],
+            'logs': [],
+            'connection_quality': 'unknown'
+        }
+        
+        if status_result.returncode == 0:
+            status_lines = status_result.stdout.strip().split('\n')
+            
+            # デバイス一覧を解析
+            devices = []
+            for line in status_lines:
+                if line.strip() and not line.startswith('#'):
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        # IPアドレスで始まる行をデバイスとして認識
+                        if '.' in parts[0] or ':' in parts[0]:
+                            devices.append({
+                                'ip': parts[0],
+                                'name': parts[1] if len(parts) > 1 else 'unknown',
+                                'status': 'online' if len(parts) > 2 and 'online' in parts[2] else 'unknown'
+                            })
+            
+            tailscale_info['devices'] = devices
+            
+            # 接続品質を判定
+            if tailscale_info['status'] == 'connected':
+                tailscale_info['connection_quality'] = 'good'
+            elif tailscale_info['status'] == 'disconnected':
+                tailscale_info['connection_quality'] = 'poor'
+            
+            # ログ情報を取得（簡易版）
+            try:
+                log_result = subprocess.run(['journalctl', '-u', 'tailscaled', '--no-pager', '-n', '10'], 
+                                          capture_output=True, text=True, timeout=5)
+                if log_result.returncode == 0:
+                    log_lines = log_result.stdout.strip().split('\n')[-5:]  # 最後の5行
+                    tailscale_info['logs'] = [line.strip() for line in log_lines if line.strip()]
+            except:
+                tailscale_info['logs'] = ['ログ情報を取得できません']
+            
+            tailscale_info['message'] = f'{len(devices)}個のデバイスが検出されました'
+        else:
+            tailscale_info['message'] = 'Tailscaleコマンドの実行に失敗しました'
+            tailscale_info['status'] = 'error'
+        
+        return jsonify(tailscale_info)
+        
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'status': 'timeout',
+            'ip': 'unknown',
+            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'devices': [],
+            'logs': [],
+            'connection_quality': 'poor',
+            'message': 'Tailscaleコマンドがタイムアウトしました'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'ip': 'unknown',
+            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'devices': [],
+            'logs': [],
+            'connection_quality': 'poor',
+            'message': f'エラー: {str(e)}'
+        })
 
 # ========================================
 # 録音機能API
@@ -352,55 +574,6 @@ def api_gdrive_status():
     
     return jsonify(gdrive_data)
 
-@app.route('/gdrive/test-upload')
-def test_upload_page():
-    """テスト送信画面"""
-    return render_template('test_upload.html')
-
-@app.route('/api/gdrive-test-upload', methods=['POST'])
-def api_test_upload():
-    """テストファイル送信API"""
-    global gdrive_data
-    
-    if not gdrive_manager:
-        return jsonify({
-            'success': False,
-            'message': 'Google Drive機能が無効です'
-        }), 500
-    
-    try:
-        request_data = request.get_json() or {}
-        data_type = request_data.get('data_type', 'test')
-        
-        # データ生成
-        if data_type == 'network':
-            data = DataSource.create_network_data(network_monitor.get_data())
-        else:
-            data = DataSource.create_test_data()
-        
-        filename = DataSource.get_filename(data_type)
-        
-        # Google Driveにアップロード
-        result = gdrive_manager.upload_data(data, filename)
-        
-        # アップロード結果を保存
-        if result['success']:
-            gdrive_data['last_upload'] = {
-                'filename': result['filename'],
-                'upload_time': result['upload_time'],
-                'data_type': data_type,
-                'file_id': result.get('file_id'),
-                'web_link': result.get('web_link')
-            }
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'アップロードエラー: {str(e)}'
-        }), 500
-
 # ========================================
 # バックグラウンド処理
 # ========================================
@@ -459,8 +632,13 @@ if __name__ == '__main__':
     
     # アクセス情報表示
     print("🌐 アクセス情報:")
-    print(f"  - メイン画面: http://localhost:{settings.app['port']}/")
+    print(f"  - メインページ（ダッシュボード）: http://localhost:{settings.app['port']}/")
+    print(f"  - 詳細監視: http://localhost:{settings.app['port']}/network-monitor")
     print(f"  - 録音機能: http://localhost:{settings.app['port']}/recording")
+    print(f"  - Tailscale管理: http://localhost:{settings.app['port']}/tailscale")
+    print(f"  - Crontab管理: http://localhost:{settings.app['port']}/crontab")
+    print(f"  - デバイス管理: http://localhost:{settings.app['port']}/devices")
+    print(f"  - ネットワーク詳細: http://localhost:{settings.app['port']}/network")
     if gdrive_manager:
         print(f"  - Google Drive: http://localhost:{settings.app['port']}/gdrive")
     print("=" * 50)

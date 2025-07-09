@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ネットワーク詳細 - Raspberry Pi</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #00d2d3 0%, #54a0ff 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 25px;
+            padding: 30px 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            color: #54a0ff;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-online {
+            background: #4CAF50;
+        }
+
+        .status-offline {
+            background: #f44336;
+        }
+
+        .status-warning {
+            background: #FF9800;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .connection-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .connection-status {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .connection-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .connection-item {
+            text-align: center;
+        }
+
+        .connection-value {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .connection-label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .metrics-section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .metric-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            border-left: 4px solid #54a0ff;
+        }
+
+        .metric-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .metric-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #54a0ff;
+        }
+
+        .metric-chart {
+            height: 60px;
+            background: linear-gradient(90deg, #e3f2fd 0%, #bbdefb 50%, #2196f3 100%);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-chart::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: rgba(33, 150, 243, 0.5);
+            transform: translateY(-50%);
+        }
+
+        .metric-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .speed-test-section {
+            margin-bottom: 30px;
+        }
+
+        .speed-test-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            text-align: center;
+        }
+
+        .speed-test-result {
+            margin: 20px 0;
+        }
+
+        .speed-value {
+            font-size: 32px;
+            font-weight: 600;
+            color: #54a0ff;
+            margin-bottom: 5px;
+        }
+
+        .speed-label {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            flex: 1;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 15px;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #00d2d3 0%, #54a0ff 100%);
+        }
+
+        .btn-secondary:hover {
+            box-shadow: 0 6px 20px rgba(0, 210, 211, 0.4);
+        }
+
+        .interface-section {
+            margin-bottom: 30px;
+        }
+
+        .interface-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .interface-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .interface-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .interface-status {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .interface-status.up {
+            background: #e8f5e8;
+            color: #4CAF50;
+        }
+
+        .interface-status.down {
+            background: #ffebee;
+            color: #f44336;
+        }
+
+        .interface-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            font-size: 14px;
+        }
+
+        .interface-detail {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .interface-label {
+            color: #666;
+            font-size: 12px;
+        }
+
+        .interface-value {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #54a0ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .nav-link {
+            color: #666;
+            text-decoration: none;
+            font-size: 14px;
+            margin: 0 15px;
+            padding: 8px 15px;
+            border-radius: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover {
+            background: rgba(0, 210, 211, 0.1);
+            color: #54a0ff;
+        }
+
+        .last-update {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 15px;
+        }
+
+        /* レスポンシブ調整 */
+        @media (max-width: 480px) {
+            .container {
+                margin: 0 10px;
+                padding: 20px 15px;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+
+            .connection-details {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+
+            .interface-details {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* アニメーション効果 */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .signal-strength {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .signal-bar {
+            width: 4px;
+            background: #ddd;
+            border-radius: 2px;
+            transition: background-color 0.3s ease;
+        }
+
+        .signal-bar:nth-child(1) { height: 8px; }
+        .signal-bar:nth-child(2) { height: 12px; }
+        .signal-bar:nth-child(3) { height: 16px; }
+        .signal-bar:nth-child(4) { height: 20px; }
+
+        .signal-bar.active {
+            background: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                📡 ネットワーク詳細
+                <span class="status-indicator status-online" id="network-status"></span>
+            </h1>
+            <p class="subtitle">接続品質・パフォーマンス監視</p>
+        </div>
+
+        <!-- 接続状況カード -->
+        <div class="connection-card">
+            <div class="connection-status" id="connection-status">接続確認中...</div>
+            <div class="connection-details">
+                <div class="connection-item">
+                    <div class="connection-value" id="signal-strength">-</div>
+                    <div class="connection-label">信号強度</div>
+                </div>
+                <div class="connection-item">
+                    <div class="connection-value" id="ping-latency">-</div>
+                    <div class="connection-label">応答時間</div>
+                </div>
+                <div class="connection-item">
+                    <div class="connection-value" id="current-ip">-</div>
+                    <div class="connection-label">IPアドレス</div>
+                </div>
+                <div class="connection-item">
+                    <div class="connection-value" id="dns-server">-</div>
+                    <div class="connection-label">DNSサーバー</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- アクションボタン -->
+        <div class="actions">
+            <button class="btn" onclick="runSpeedTest()">
+                <span id="speed-test-icon">⚡</span>
+                <span id="speed-test-text">速度テスト</span>
+            </button>
+            <button class="btn btn-secondary" onclick="runPingTest()">
+                <span id="ping-test-icon">📶</span>
+                <span id="ping-test-text">接続テスト</span>
+            </button>
+        </div>
+
+        <!-- 速度テスト結果 -->
+        <div class="speed-test-section">
+            <div class="section-title">
+                ⚡ 速度テスト結果
+            </div>
+            <div class="speed-test-card">
+                <div class="speed-test-result">
+                    <div class="speed-value" id="speed-test-result">-</div>
+                    <div class="speed-label">Mbps</div>
+                </div>
+                <div style="font-size: 12px; color: #666;" id="speed-test-time">-</div>
+            </div>
+        </div>
+
+        <!-- ネットワークメトリクス -->
+        <div class="metrics-section">
+            <div class="section-title">
+                📊 ネットワークメトリクス
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-title">📶 WiFi信号強度</div>
+                    <div class="metric-value" id="wifi-signal-value">-</div>
+                </div>
+                <div class="metric-chart" id="wifi-signal-chart"></div>
+                <div class="metric-info">
+                    <span>最低: <span id="wifi-min">-</span></span>
+                    <span>最高: <span id="wifi-max">-</span></span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-title">⏱️ 応答時間</div>
+                    <div class="metric-value" id="latency-value">-</div>
+                </div>
+                <div class="metric-chart" id="latency-chart"></div>
+                <div class="metric-info">
+                    <span>平均: <span id="latency-avg">-</span></span>
+                    <span>最大: <span id="latency-max">-</span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ネットワークインターフェース -->
+        <div class="interface-section">
+            <div class="section-title">
+                🔌 ネットワークインターフェース
+            </div>
+            <div id="interfaces-container">
+                <!-- インターフェース情報はJavaScriptで動的に生成 -->
+            </div>
+        </div>
+
+        <!-- フッター -->
+        <div class="footer">
+            <div class="last-update">
+                最終更新: <span id="last-update">-</span>
+            </div>
+            <div>
+                <a href="/" class="nav-link">📊 ダッシュボード</a>
+                <a href="/devices" class="nav-link">📱 デバイス</a>
+                <a href="/network-monitor" class="nav-link">🖥️ 詳細監視</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class NetworkDetailManager {
+            constructor() {
+                this.isTestRunning = false;
+                this.metrics = {
+                    wifi: [],
+                    latency: []
+                };
+                this.init();
+            }
+
+            async init() {
+                console.log('Network Detail Manager initializing...');
+                await this.loadNetworkData();
+                this.startAutoUpdate();
+            }
+
+            async loadNetworkData() {
+                try {
+                    const networkData = await this.fetchNetworkStatus();
+                    this.updateConnectionUI(networkData);
+                    this.updateMetricsUI(networkData);
+                    this.updateInterfacesUI(networkData);
+                    
+                    document.getElementById('last-update').textContent = 
+                        new Date().toLocaleTimeString('ja-JP');
+
+                } catch (error) {
+                    console.error('Network data loading error:', error);
+                    this.showError();
+                }
+            }
+
+            async fetchNetworkStatus() {
+                const response = await fetch('/api/network-status');
+                if (!response.ok) {
+                    throw new Error(`Network API error: ${response.status}`);
+                }
+                return await response.json();
+            }
+
+            updateConnectionUI(data) {
+                // 接続状態
+                const isConnected = data.connection_status === 'connected';
+                const statusIndicator = document.getElementById('network-status');
+                statusIndicator.className = `status-indicator ${isConnected ? 'status-online' : 'status-offline'}`;
+                
+                document.getElementById('connection-status').textContent = 
+                    isConnected ? 'インターネット接続正常' : '接続に問題があります';
+
+                // 信号強度
+                const signalStrength = data.signal_strength_percent || 0;
+                this.updateSignalStrength(signalStrength);
+
+                // 応答時間
+                const latency = data.ping_latency || '-';
+                document.getElementById('ping-latency').textContent = 
+                    latency !== '-' ? `${latency}ms` : '-';
+
+                // IPアドレス
+                document.getElementById('current-ip').textContent = 
+                    data.current_ip || '-';
+
+                // DNSサーバー
+                document.getElementById('dns-server').textContent = 
+                    data.dns_server || '-';
+            }
+
+            updateSignalStrength(strength) {
+                document.getElementById('signal-strength').textContent = `${strength}%`;
+                
+                // 信号強度バー表示
+                const container = document.getElementById('signal-strength');
+                if (!container.querySelector('.signal-strength')) {
+                    const signalDiv = document.createElement('div');
+                    signalDiv.className = 'signal-strength';
+                    signalDiv.innerHTML = `
+                        <div class="signal-bar"></div>
+                        <div class="signal-bar"></div>
+                        <div class="signal-bar"></div>
+                        <div class="signal-bar"></div>
+                    `;
+                    container.appendChild(signalDiv);
+                }
+
+                // バーの表示更新
+                const bars = container.querySelectorAll('.signal-bar');
+                bars.forEach((bar, index) => {
+                    const threshold = (index + 1) * 25;
+                    bar.classList.toggle('active', strength >= threshold);
+                });
+            }
+
+            updateMetricsUI(data) {
+                // WiFi信号強度のメトリクス
+                const wifiSignal = data.signal_strength_percent || 0;
+                this.metrics.wifi.push(wifiSignal);
+                if (this.metrics.wifi.length > 20) {
+                    this.metrics.wifi.shift();
+                }
+
+                document.getElementById('wifi-signal-value').textContent = `${wifiSignal}%`;
+                document.getElementById('wifi-min').textContent = 
+                    `${Math.min(...this.metrics.wifi)}%`;
+                document.getElementById('wifi-max').textContent = 
+                    `${Math.max(...this.metrics.wifi)}%`;
+
+                // 応答時間のメトリクス
+                const latency = data.ping_latency || 0;
+                if (latency > 0) {
+                    this.metrics.latency.push(latency);
+                    if (this.metrics.latency.length > 20) {
+                        this.metrics.latency.shift();
+                    }
+
+                    document.getElementById('latency-value').textContent = `${latency}ms`;
+                    document.getElementById('latency-avg').textContent = 
+                        `${Math.round(this.metrics.latency.reduce((a, b) => a + b, 0) / this.metrics.latency.length)}ms`;
+                    document.getElementById('latency-max').textContent = 
+                        `${Math.max(...this.metrics.latency)}ms`;
+                }
+            }
+
+            updateInterfacesUI(data) {
+                const container = document.getElementById('interfaces-container');
+                const interfaces = data.network_interfaces || [];
+
+                if (interfaces.length === 0) {
+                    container.innerHTML = `
+                        <div style="text-align: center; padding: 20px; color: #666;">
+                            ネットワークインターフェース情報が取得できませんでした
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = interfaces.map(iface => `
+                    <div class="interface-card">
+                        <div class="interface-header">
+                            <div class="interface-name">
+                                ${this.getInterfaceIcon(iface.type)} ${iface.name}
+                            </div>
+                            <div class="interface-status ${iface.status === 'up' ? 'up' : 'down'}">
+                                ${iface.status === 'up' ? 'アクティブ' : '無効'}
+                            </div>
+                        </div>
+                        <div class="interface-details">
+                            <div class="interface-detail">
+                                <div class="interface-label">IPアドレス</div>
+                                <div class="interface-value">${iface.ip || '-'}</div>
+                            </div>
+                            <div class="interface-detail">
+                                <div class="interface-label">MACアドレス</div>
+                                <div class="interface-value">${iface.mac || '-'}</div>
+                            </div>
+                            <div class="interface-detail">
+                                <div class="interface-label">送信バイト</div>
+                                <div class="interface-value">${this.formatBytes(iface.tx_bytes || 0)}</div>
+                            </div>
+                            <div class="interface-detail">
+                                <div class="interface-label">受信バイト</div>
+                                <div class="interface-value">${this.formatBytes(iface.rx_bytes || 0)}</div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            getInterfaceIcon(type) {
+                const icons = {
+                    wifi: '📶',
+                    ethernet: '🌐',
+                    loopback: '🔄',
+                    vpn: '🔒'
+                };
+                return icons[type] || '🔌';
+            }
+
+            formatBytes(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+            }
+
+            showError() {
+                const statusIndicator = document.getElementById('network-status');
+                statusIndicator.className = 'status-indicator status-offline';
+                document.getElementById('connection-status').textContent = 'データの取得に失敗しました';
+            }
+
+            startAutoUpdate() {
+                setInterval(() => {
+                    if (!this.isTestRunning) {
+                        this.loadNetworkData();
+                    }
+                }, 10000); // 10秒ごと
+            }
+        }
+
+        // グローバル関数
+        let networkManager;
+
+        async function runSpeedTest() {
+            if (networkManager.isTestRunning) return;
+
+            const button = document.querySelector('.btn');
+            const icon = document.getElementById('speed-test-icon');
+            const text = document.getElementById('speed-test-text');
+            
+            networkManager.isTestRunning = true;
+            button.disabled = true;
+            icon.innerHTML = '<span class="loading"></span>';
+            text.textContent = 'テスト中...';
+
+            try {
+                const response = await fetch('/api/speed-test');
+                const data = await response.json();
+                
+                const speed = data.speed_mbps || 0;
+                document.getElementById('speed-test-result').textContent = 
+                    speed > 0 ? speed.toFixed(1) : '測定失敗';
+                document.getElementById('speed-test-time').textContent = 
+                    `測定時刻: ${data.timestamp || new Date().toLocaleTimeString('ja-JP')}`;
+
+            } catch (error) {
+                console.error('Speed test error:', error);
+                document.getElementById('speed-test-result').textContent = 'エラー';
+                document.getElementById('speed-test-time').textContent = '測定に失敗しました';
+            } finally {
+                setTimeout(() => {
+                    networkManager.isTestRunning = false;
+                    button.disabled = false;
+                    icon.textContent = '⚡';
+                    text.textContent = '速度テスト';
+                }, 1000);
+            }
+        }
+
+        async function runPingTest() {
+            if (networkManager.isTestRunning) return;
+
+            const button = document.querySelectorAll('.btn')[1];
+            const icon = document.getElementById('ping-test-icon');
+            const text = document.getElementById('ping-test-text');
+            
+            networkManager.isTestRunning = true;
+            button.disabled = true;
+            icon.innerHTML = '<span class="loading"></span>';
+            text.textContent = 'テスト中...';
+
+            try {
+                const response = await fetch('/api/ping-test');
+                const data = await response.json();
+                
+                const latency = data.latency || 0;
+                document.getElementById('ping-latency').textContent = 
+                    latency > 0 ? `${latency}ms` : '測定失敗';
+
+                // メトリクスも更新
+                if (latency > 0) {
+                    networkManager.metrics.latency.push(latency);
+                    if (networkManager.metrics.latency.length > 20) {
+                        networkManager.metrics.latency.shift();
+                    }
+                }
+
+            } catch (error) {
+                console.error('Ping test error:', error);
+                document.getElementById('ping-latency').textContent = 'エラー';
+            } finally {
+                setTimeout(() => {
+                    networkManager.isTestRunning = false;
+                    button.disabled = false;
+                    icon.textContent = '📶';
+                    text.textContent = '接続テスト';
+                }, 1000);
+            }
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            networkManager = new NetworkDetailManager();
+        });
+    </script>
+</body>
+</html>

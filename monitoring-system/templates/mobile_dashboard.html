@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT管理 - Raspberry Pi</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 25px;
+            padding: 30px 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 300;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-online {
+            background: #4CAF50;
+        }
+
+        .status-offline {
+            background: #f44336;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            aspect-ratio: 1;
+            background: #4285f4;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(66, 133, 244, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(66, 133, 244, 0.4);
+        }
+
+        .card:active {
+            transform: translateY(-1px);
+        }
+
+        .card-icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+            line-height: 1.2;
+        }
+
+        .card-status {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .card-status.active {
+            background: #4CAF50;
+            box-shadow: 0 0 6px rgba(76, 175, 80, 0.6);
+        }
+
+        .card-status.inactive {
+            background: #f44336;
+        }
+
+        .card-status.warning {
+            background: #FF9800;
+        }
+
+        /* カード別カラー */
+        .card-recording {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+        }
+
+        .card-recording:hover {
+            box-shadow: 0 8px 25px rgba(255, 107, 107, 0.4);
+        }
+
+        .card-tailscale {
+            background: linear-gradient(135deg, #5f27cd 0%, #341f97 100%);
+            box-shadow: 0 4px 15px rgba(95, 39, 205, 0.3);
+        }
+
+        .card-tailscale:hover {
+            box-shadow: 0 8px 25px rgba(95, 39, 205, 0.4);
+        }
+
+        .card-network {
+            background: linear-gradient(135deg, #00d2d3 0%, #54a0ff 100%);
+            box-shadow: 0 4px 15px rgba(0, 210, 211, 0.3);
+        }
+
+        .card-network:hover {
+            box-shadow: 0 8px 25px rgba(0, 210, 211, 0.4);
+        }
+
+        .card-devices {
+            background: linear-gradient(135deg, #fd79a8 0%, #e84393 100%);
+            box-shadow: 0 4px 15px rgba(253, 121, 168, 0.3);
+        }
+
+        .card-devices:hover {
+            box-shadow: 0 8px 25px rgba(253, 121, 168, 0.4);
+        }
+
+        .card-gdrive {
+            background: linear-gradient(135deg, #fdcb6e 0%, #e17055 100%);
+            box-shadow: 0 4px 15px rgba(253, 203, 110, 0.3);
+        }
+
+        .card-gdrive:hover {
+            box-shadow: 0 8px 25px rgba(253, 203, 110, 0.4);
+        }
+
+        .card-crontab {
+            background: linear-gradient(135deg, #a29bfe 0%, #6c5ce7 100%);
+            box-shadow: 0 4px 15px rgba(162, 155, 254, 0.3);
+        }
+
+        .card-crontab:hover {
+            box-shadow: 0 8px 25px rgba(162, 155, 254, 0.4);
+        }
+
+        .quick-status {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .quick-status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .quick-status-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .quick-status-label {
+            color: #666;
+        }
+
+        .quick-status-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .last-update {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 15px;
+        }
+
+        .refresh-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .refresh-btn:active {
+            transform: translateY(0);
+        }
+
+        /* 読み込み中アニメーション */
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #4285f4;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* ナビゲーション */
+        .nav-footer {
+            text-align: center;
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .nav-link {
+            color: #666;
+            text-decoration: none;
+            font-size: 12px;
+            margin: 0 10px;
+            padding: 5px 10px;
+            border-radius: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #333;
+        }
+
+        /* レスポンシブ調整 */
+        @media (min-width: 480px) {
+            .container {
+                max-width: 450px;
+                padding: 40px 30px;
+            }
+
+            .card-icon {
+                font-size: 32px;
+            }
+
+            .card-title {
+                font-size: 15px;
+            }
+        }
+
+        @media (min-width: 768px) {
+            body {
+                padding: 40px;
+            }
+
+            .container {
+                max-width: 500px;
+            }
+
+            .dashboard-grid {
+                gap: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>IoT管理<span class="status-indicator status-online" id="system-status"></span></h1>
+            <p>Raspberry Pi 監視システム</p>
+        </div>
+
+        <!-- クイックステータス -->
+        <div class="quick-status">
+            <div class="quick-status-row">
+                <span class="quick-status-label">WiFi信号</span>
+                <span class="quick-status-value" id="wifi-strength">-</span>
+            </div>
+            <div class="quick-status-row">
+                <span class="quick-status-label">Tailscale</span>
+                <span class="quick-status-value" id="tailscale-status">-</span>
+            </div>
+            <div class="quick-status-row">
+                <span class="quick-status-label">録音デバイス</span>
+                <span class="quick-status-value" id="audio-devices">-</span>
+            </div>
+        </div>
+
+        <!-- メインダッシュボード -->
+        <div class="dashboard-grid">
+            <a href="/recording" class="card card-recording">
+                <div class="card-status inactive" id="recording-status"></div>
+                <div class="card-icon">🎤</div>
+                <div class="card-title">録音</div>
+            </a>
+
+            <a href="/tailscale" class="card card-tailscale">
+                <div class="card-status active" id="tailscale-card-status"></div>
+                <div class="card-icon">🔒</div>
+                <div class="card-title">Tailscale</div>
+            </a>
+
+            <a href="/network" class="card card-network">
+                <div class="card-status active" id="network-card-status"></div>
+                <div class="card-icon">📡</div>
+                <div class="card-title">ネットワーク詳細</div>
+            </a>
+
+            <a href="/devices" class="card card-devices">
+                <div class="card-status warning" id="devices-card-status"></div>
+                <div class="card-icon">📱</div>
+                <div class="card-title">接続デバイス</div>
+            </a>
+
+            <a href="/gdrive" class="card card-gdrive">
+                <div class="card-status inactive" id="gdrive-card-status"></div>
+                <div class="card-icon">☁️</div>
+                <div class="card-title">Google Drive<br>接続状況</div>
+            </a>
+
+            <a href="/crontab" class="card card-crontab">
+                <div class="card-status active" id="crontab-card-status"></div>
+                <div class="card-icon">⏰</div>
+                <div class="card-title">Crontab<br>管理</div>
+            </a>
+        </div>
+
+        <!-- フッター -->
+        <div class="footer">
+            <div class="last-update">
+                最終更新: <span id="last-update">-</span>
+            </div>
+            <button class="refresh-btn" onclick="refreshAll()">
+                <span id="refresh-icon">🔄</span> 更新
+            </button>
+        </div>
+
+        <!-- ナビゲーション -->
+        <div class="nav-footer">
+            <a href="/network-monitor" class="nav-link">詳細監視</a>
+            <a href="/devices" class="nav-link">デバイス</a>
+            <a href="/network" class="nav-link">ネットワーク</a>
+            <a href="/recording" class="nav-link">録音機能</a>
+        </div>
+    </div>
+
+    <script>
+        // ダッシュボードクラス
+        class IoTDashboard {
+            constructor() {
+                this.updateInterval = null;
+                this.isUpdating = false;
+                this.init();
+            }
+
+            async init() {
+                console.log('IoT Dashboard initializing...');
+                await this.updateAllData();
+                this.startAutoUpdate();
+            }
+
+            async updateAllData() {
+                if (this.isUpdating) return;
+                this.isUpdating = true;
+
+                try {
+                    // 並列でデータ取得
+                    const [networkData, recordingStatus, gdriveStatus, crontabStatus] = await Promise.allSettled([
+                        this.fetchNetworkData(),
+                        this.fetchRecordingStatus(),
+                        this.fetchGDriveStatus(),
+                        this.fetchCrontabStatus()
+                    ]);
+
+                    // UI更新
+                    if (networkData.status === 'fulfilled') {
+                        this.updateNetworkUI(networkData.value);
+                    } else {
+                        console.warn('Network data fetch failed:', networkData.reason);
+                    }
+
+                    if (recordingStatus.status === 'fulfilled') {
+                        this.updateRecordingUI(recordingStatus.value);
+                    } else {
+                        console.warn('Recording status fetch failed:', recordingStatus.reason);
+                    }
+
+                    if (gdriveStatus.status === 'fulfilled') {
+                        this.updateGDriveUI(gdriveStatus.value);
+                    } else {
+                        console.warn('GDrive status fetch failed:', gdriveStatus.reason);
+                    }
+
+                    if (crontabStatus.status === 'fulfilled') {
+                        this.updateCrontabUI(crontabStatus.value);
+                    } else {
+                        console.warn('Crontab status fetch failed:', crontabStatus.reason);
+                    }
+
+                    // 最終更新時刻
+                    document.getElementById('last-update').textContent = 
+                        new Date().toLocaleTimeString('ja-JP');
+
+                } catch (error) {
+                    console.error('Dashboard update error:', error);
+                } finally {
+                    this.isUpdating = false;
+                }
+            }
+
+            async fetchNetworkData() {
+                const response = await fetch('/api/network-status');
+                if (!response.ok) {
+                    throw new Error(`Network API error: ${response.status}`);
+                }
+                return await response.json();
+            }
+
+            async fetchRecordingStatus() {
+                const response = await fetch('/api/recording/status');
+                if (!response.ok) {
+                    throw new Error(`Recording API error: ${response.status}`);
+                }
+                return await response.json();
+            }
+
+            async fetchGDriveStatus() {
+                const response = await fetch('/api/gdrive-status');
+                if (!response.ok) {
+                    throw new Error(`GDrive API error: ${response.status}`);
+                }
+                return await response.json();
+            }
+
+            async fetchCrontabStatus() {
+                const response = await fetch('/api/crontab-status');
+                if (!response.ok) {
+                    throw new Error(`Crontab API error: ${response.status}`);
+                }
+                return await response.json();
+            }
+
+            updateNetworkUI(data) {
+                // WiFi信号強度
+                const wifiStrength = data.signal_strength_percent || 0;
+                document.getElementById('wifi-strength').textContent = 
+                    wifiStrength > 0 ? `${wifiStrength}%` : '未接続';
+
+                // Tailscale状態
+                const tailscaleStatus = data.tailscale_status === 'connected' ? '接続中' : '切断';
+                document.getElementById('tailscale-status').textContent = tailscaleStatus;
+
+                // オーディオデバイス数
+                const deviceCount = data.connected_devices ? data.connected_devices.length : 0;
+                document.getElementById('audio-devices').textContent = `${deviceCount}台`;
+
+                // カードステータス更新
+                this.updateCardStatus('network-card-status', data.connection_status === 'connected');
+                this.updateCardStatus('tailscale-card-status', data.tailscale_status === 'connected');
+
+                // システム全体ステータス
+                const systemOnline = data.connection_status === 'connected';
+                this.updateSystemStatus(systemOnline);
+            }
+
+            updateRecordingUI(data) {
+                const isRecording = data.is_recording || false;
+                document.getElementById('recording-status').className = 
+                    `card-status ${isRecording ? 'active' : 'inactive'}`;
+            }
+
+            updateGDriveUI(data) {
+                const isConnected = data.status === 'connected' || data.status === 'authenticating';
+                document.getElementById('gdrive-card-status').className = 
+                    `card-status ${isConnected ? 'active' : 'inactive'}`;
+            }
+
+            updateCrontabUI(data) {
+                const isActive = data.status === 'active';
+                const hasJobs = data.active_jobs > 0;
+                
+                document.getElementById('crontab-card-status').className = 
+                    `card-status ${isActive && hasJobs ? 'active' : hasJobs ? 'warning' : 'inactive'}`;
+            }
+
+            updateCardStatus(elementId, isActive) {
+                const element = document.getElementById(elementId);
+                if (element) {
+                    element.className = `card-status ${isActive ? 'active' : 'inactive'}`;
+                }
+            }
+
+            updateSystemStatus(isOnline) {
+                const indicator = document.getElementById('system-status');
+                indicator.className = `status-indicator ${isOnline ? 'status-online' : 'status-offline'}`;
+            }
+
+            startAutoUpdate() {
+                this.updateInterval = setInterval(() => {
+                    this.updateAllData();
+                }, 10000); // 10秒ごと
+            }
+
+            stopAutoUpdate() {
+                if (this.updateInterval) {
+                    clearInterval(this.updateInterval);
+                    this.updateInterval = null;
+                }
+            }
+        }
+
+        // グローバル関数
+        let dashboard;
+
+        function refreshAll() {
+            const refreshIcon = document.getElementById('refresh-icon');
+            const originalIcon = refreshIcon.textContent;
+            
+            refreshIcon.innerHTML = '<span class="loading"></span>';
+            
+            dashboard.updateAllData().finally(() => {
+                setTimeout(() => {
+                    refreshIcon.textContent = originalIcon;
+                }, 500);
+            });
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            dashboard = new IoTDashboard();
+        });
+
+        // ページ離脱時のクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            if (dashboard) {
+                dashboard.stopAutoUpdate();
+            }
+        });
+
+        // タッチデバイス対応
+        document.addEventListener('touchstart', function() {}, true);
+    </script>
+</body>
+</html>

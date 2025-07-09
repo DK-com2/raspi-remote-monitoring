@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crontab管理 - Raspberry Pi</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #a29bfe 0%, #6c5ce7 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 25px;
+            padding: 30px 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            color: #6c5ce7;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-active {
+            background: #4CAF50;
+        }
+
+        .status-inactive {
+            background: #f44336;
+        }
+
+        .status-warning {
+            background: #FF9800;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-card {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            font-size: 15px;
+        }
+
+        .status-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .status-label {
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .status-value {
+            font-weight: 600;
+            color: #1d1d1f;
+        }
+
+        .status-value.active {
+            color: #28a745;
+        }
+
+        .status-value.inactive {
+            color: #dc3545;
+        }
+
+        .status-value.warning {
+            color: #fd7e14;
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(108, 92, 231, 0.1);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #6c5ce7;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .jobs-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .job-item {
+            padding: 20px;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            border-left: 4px solid #6c5ce7;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .job-item:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
+        }
+
+        .job-item.active {
+            border-left-color: #28a745;
+        }
+
+        .job-item.inactive {
+            border-left-color: #dc3545;
+            opacity: 0.7;
+        }
+
+        .job-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .job-schedule {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            font-weight: 600;
+            color: #495057;
+            background: rgba(108, 92, 231, 0.1);
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+
+        .job-status {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        .job-status.active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .job-status.inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .job-command {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #6c757d;
+            background: #f1f3f4;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-top: 8px;
+            word-break: break-all;
+        }
+
+        .job-description {
+            font-size: 13px;
+            color: #495057;
+            margin-top: 8px;
+            font-style: italic;
+        }
+
+        .logs-container {
+            max-height: 300px;
+            overflow-y: auto;
+            background: #2c3e50;
+            border-radius: 12px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .log-line {
+            color: #ecf0f1;
+            margin-bottom: 4px;
+            word-wrap: break-word;
+        }
+
+        .log-line.error {
+            color: #e74c3c;
+        }
+
+        .log-line.success {
+            color: #2ecc71;
+        }
+
+        .log-line.info {
+            color: #3498db;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 25px;
+        }
+
+        .btn {
+            padding: 14px 20px;
+            border: none;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(108, 92, 231, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(108, 92, 231, 0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(108, 117, 125, 0.3);
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(108, 117, 125, 0.4);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #155724 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+            color: #212529;
+            box-shadow: 0 4px 15px rgba(255, 193, 7, 0.3);
+        }
+
+        .btn-warning:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 193, 7, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(108, 92, 231, 0.2);
+        }
+
+        .nav-links {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .nav-link {
+            color: #6c757d;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 15px;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover {
+            background: rgba(108, 92, 231, 0.1);
+            color: #6c5ce7;
+        }
+
+        .last-update {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 15px;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #6c757d;
+            padding: 40px 20px;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* レスポンシブ対応 */
+        @media (max-width: 480px) {
+            .container {
+                margin: 10px;
+                padding: 20px 15px;
+            }
+
+            .action-buttons {
+                grid-template-columns: 1fr;
+            }
+
+            .nav-links {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .job-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- ヘッダー -->
+        <div class="header">
+            <h1>
+                ⏰ Crontab管理
+                <span class="status-indicator status-active" id="main-status"></span>
+            </h1>
+            <p>スケジュール済みタスクの監視と管理</p>
+        </div>
+
+        <!-- ステータスカード -->
+        <div class="status-card">
+            <div class="status-row">
+                <span class="status-label">サービス状態</span>
+                <span class="status-value active" id="service-status">確認中...</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">アクティブジョブ</span>
+                <span class="status-value" id="active-jobs">- 個</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">最終実行</span>
+                <span class="status-value" id="last-execution">-</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">次回実行予定</span>
+                <span class="status-value" id="next-execution">-</span>
+            </div>
+        </div>
+
+        <!-- アラート表示エリア -->
+        <div id="alert-area"></div>
+
+        <!-- アクティブジョブ一覧 -->
+        <div class="section">
+            <div class="section-title">
+                📋 アクティブジョブ一覧
+            </div>
+            <div class="jobs-list" id="jobs-list">
+                <div style="text-align: center; color: #6c757d; padding: 20px;">
+                    <div class="loading"></div>
+                    <div style="margin-top: 10px;">ジョブ情報を読み込み中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 実行ログ -->
+        <div class="section">
+            <div class="section-title">
+                📊 実行ログ
+            </div>
+            <div class="logs-container" id="logs-container">
+                <div class="log-line">ログを読み込み中...</div>
+            </div>
+        </div>
+
+        <!-- アクションボタン -->
+        <div class="action-buttons">
+            <button class="btn btn-primary" onclick="refreshStatus()" id="refresh-btn">
+                <span id="refresh-icon">🔄</span> 状態更新
+            </button>
+            <button class="btn btn-success" onclick="viewFullCrontab()" id="view-btn">
+                <span>📄</span> 完全表示
+            </button>
+            <a href="/dashboard" class="btn btn-secondary">
+                <span>🏠</span> ダッシュボード
+            </a>
+            <button class="btn btn-warning" onclick="showCronHelp()">
+                <span>❓</span> ヘルプ
+            </button>
+        </div>
+
+        <!-- フッター -->
+        <div class="footer">
+            <div class="last-update">
+                最終更新: <span id="last-update">-</span>
+            </div>
+            <div class="nav-links">
+                <a href="/dashboard" class="nav-link">ダッシュボード</a>
+                <a href="/tailscale" class="nav-link">Tailscale</a>
+                <a href="/devices" class="nav-link">デバイス管理</a>
+                <a href="/network" class="nav-link">ネットワーク</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class CrontabManager {
+            constructor() {
+                this.updateInterval = null;
+                this.isUpdating = false;
+                this.init();
+            }
+
+            async init() {
+                console.log('Crontab Manager initializing...');
+                await this.updateStatus();
+                this.startAutoUpdate();
+            }
+
+            async updateStatus() {
+                if (this.isUpdating) return;
+                this.isUpdating = true;
+
+                try {
+                    const response = await fetch('/api/crontab-status');
+                    if (!response.ok) {
+                        throw new Error(`API error: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    this.updateUI(data);
+                    
+                    // 最終更新時刻
+                    document.getElementById('last-update').textContent = 
+                        new Date().toLocaleTimeString('ja-JP');
+                        
+                } catch (error) {
+                    console.error('Status update error:', error);
+                    this.showAlert('データの取得に失敗しました: ' + error.message, 'error');
+                } finally {
+                    this.isUpdating = false;
+                }
+            }
+
+            updateUI(data) {
+                // メイン状態インジケーター
+                const mainStatus = document.getElementById('main-status');
+                const statusClass = data.status === 'active' ? 'status-active' : 
+                                  data.status === 'inactive' ? 'status-inactive' : 'status-warning';
+                mainStatus.className = `status-indicator ${statusClass}`;
+
+                // サービス状態
+                const serviceStatus = document.getElementById('service-status');
+                serviceStatus.textContent = this.getStatusText(data.status);
+                serviceStatus.className = `status-value ${data.status}`;
+
+                // アクティブジョブ数
+                document.getElementById('active-jobs').textContent = 
+                    `${data.active_jobs || 0} 個`;
+
+                // 最終実行・次回実行は簡易実装
+                document.getElementById('last-execution').textContent = '実装予定';
+                document.getElementById('next-execution').textContent = '実装予定';
+
+                // ジョブ一覧更新
+                this.updateJobsList(data.jobs || []);
+
+                // ログは簡易実装
+                this.updateLogs(['Crontab サービス起動', 'ジョブスケジュール読み込み完了']);
+
+                // アラート表示
+                if (data.status === 'error' || data.status === 'timeout') {
+                    this.showAlert(data.message, 'error');
+                } else if (data.status === 'inactive') {
+                    this.showAlert('アクティブなCrontabジョブがありません', 'warning');
+                } else {
+                    this.clearAlert();
+                }
+            }
+
+            updateJobsList(jobs) {
+                const jobsList = document.getElementById('jobs-list');
+                
+                if (jobs.length === 0) {
+                    jobsList.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📅</div>
+                            <div>スケジュール済みジョブがありません</div>
+                            <div style="font-size: 12px; margin-top: 8px; color: #999;">
+                                Crontabにジョブを追加してください
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                jobsList.innerHTML = jobs.map((job, index) => {
+                    const cronParts = job.split(' ');
+                    const schedule = cronParts.length >= 5 ? cronParts.slice(0, 5).join(' ') : job;
+                    const command = cronParts.length >= 5 ? cronParts.slice(5).join(' ') : '';
+                    
+                    return `
+                        <div class="job-item active">
+                            <div class="job-header">
+                                <div class="job-schedule">${schedule}</div>
+                                <div class="job-status active">有効</div>
+                            </div>
+                            <div class="job-command">${command || job}</div>
+                            <div class="job-description">
+                                ${this.parseCronDescription(schedule)}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            updateLogs(logs) {
+                const logsContainer = document.getElementById('logs-container');
+                
+                if (logs.length === 0) {
+                    logsContainer.innerHTML = '<div class="log-line">実行ログがありません</div>';
+                    return;
+                }
+
+                logsContainer.innerHTML = logs.map(log => {
+                    let logClass = 'log-line';
+                    if (log.toLowerCase().includes('error')) logClass += ' error';
+                    else if (log.toLowerCase().includes('success')) logClass += ' success';
+                    else logClass += ' info';
+                    
+                    return `<div class="${logClass}">[${new Date().toLocaleTimeString()}] ${this.escapeHtml(log)}</div>`;
+                }).join('');
+                
+                // 最新ログまでスクロール
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+            }
+
+            parseCronDescription(schedule) {
+                // 簡易的なCron表現の解析
+                const parts = schedule.split(' ');
+                if (parts.length >= 5) {
+                    const [min, hour, day, month, weekday] = parts;
+                    
+                    if (min === '*' && hour === '*') return '毎分実行';
+                    if (min !== '*' && hour !== '*') return `毎日 ${hour}:${min.padStart(2, '0')} に実行`;
+                    if (hour !== '*') return `毎時 ${hour} 時に実行`;
+                    
+                    return 'カスタムスケジュール';
+                }
+                return 'スケジュール情報不明';
+            }
+
+            getStatusText(status) {
+                switch (status) {
+                    case 'active': return '稼働中';
+                    case 'inactive': return '非アクティブ';
+                    case 'error': return 'エラー';
+                    case 'timeout': return 'タイムアウト';
+                    default: return '不明';
+                }
+            }
+
+            showAlert(message, type = 'warning') {
+                const alertArea = document.getElementById('alert-area');
+                const alertClass = `alert alert-${type}`;
+                alertArea.innerHTML = `<div class="${alertClass}">${this.escapeHtml(message)}</div>`;
+            }
+
+            clearAlert() {
+                document.getElementById('alert-area').innerHTML = '';
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            startAutoUpdate() {
+                this.updateInterval = setInterval(() => {
+                    this.updateStatus();
+                }, 20000); // 20秒ごと
+            }
+
+            stopAutoUpdate() {
+                if (this.updateInterval) {
+                    clearInterval(this.updateInterval);
+                    this.updateInterval = null;
+                }
+            }
+        }
+
+        // グローバル関数
+        let crontabManager;
+
+        function refreshStatus() {
+            const refreshBtn = document.getElementById('refresh-btn');
+            const refreshIcon = document.getElementById('refresh-icon');
+            
+            refreshBtn.disabled = true;
+            refreshIcon.innerHTML = '<span class="loading"></span>';
+            
+            crontabManager.updateStatus().finally(() => {
+                setTimeout(() => {
+                    refreshBtn.disabled = false;
+                    refreshIcon.textContent = '🔄';
+                }, 1000);
+            });
+        }
+
+        function viewFullCrontab() {
+            // 完全なCrontab表示（将来実装）
+            fetch('/api/crontab-status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.jobs && data.jobs.length > 0) {
+                        const fullCrontab = data.jobs.join('\n');
+                        alert(`完全なCrontab:\n\n${fullCrontab}`);
+                    } else {
+                        alert('表示できるCrontabジョブがありません');
+                    }
+                })
+                .catch(error => {
+                    alert('Crontab情報の取得に失敗しました');
+                });
+        }
+
+        function showCronHelp() {
+            alert('Cron表記ヘルプ:\n\n分 時 日 月 曜日 コマンド\n\n* = 全て\n0 9 * * 1 = 毎週月曜日9時\n*/5 * * * * = 5分毎\n0 */2 * * * = 2時間毎\n\n詳細は "man crontab" を参照してください');
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            crontabManager = new CrontabManager();
+        });
+
+        // ページ離脱時のクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            if (crontabManager) {
+                crontabManager.stopAutoUpdate();
+            }
+        });
+    </script>
+</body>
+</html>

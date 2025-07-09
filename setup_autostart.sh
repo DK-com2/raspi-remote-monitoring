@@ -6,6 +6,17 @@ set -e
 
 echo "🚀 Raspberry Pi 監視システム 統合セットアップ"
 echo "=============================================="
+echo ""
+echo "🛠️  実行モードを選択してください:"
+echo "  1) 🏠 新規セットアップ（初回インストール）"
+echo "  2) 🔄 環境リセット（更新準備）"
+echo "  3) 🧪 テストモード（手動起動・終了）"
+echo "  4) 📋 状態確認（現在の設定表示）"
+echo "  5) 🗑️  完全アンインストール（全削除）"
+echo ""
+read -p "選択 (1-5): " -n 1 -r
+echo
+SETUP_MODE=$REPLY
 
 # 設定変数（自動検出）
 CURRENT_DIR="$(pwd)"
@@ -48,6 +59,380 @@ log_debug "プロジェクトディレクトリ: $PROJECT_DIR"
 log_debug "ユーザー: $USER"
 log_debug "Python仮想環境: $PYTHON_VENV"
 echo ""
+
+# ==================== 環境リセット関数 ====================
+reset_environment() {
+    log_info "🔄 環境リセット開始..."
+    
+    # 現在の設定状態表示
+    echo ""
+    log_info "📋 現在の設定状態:"
+    
+    # systemdサービス状態確認
+    if systemctl is-enabled ${SERVICE_NAME}.service >/dev/null 2>&1; then
+        echo "  ✅ systemdサービス: 有効"
+        if systemctl is-active --quiet ${SERVICE_NAME}.service; then
+            echo "  🟢 サービス状態: 稼働中"
+        else
+            echo "  🔴 サービス状態: 停止中"
+        fi
+    else
+        echo "  ❌ systemdサービス: 未設定"
+    fi
+    
+    # ファイル存在確認
+    if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+        echo "  ✅ サービスファイル: 存在"
+    else
+        echo "  ❌ サービスファイル: 不在"
+    fi
+    
+    if [ -d "$PROJECT_DIR" ]; then
+        echo "  ✅ プロジェクト: 存在"
+    else
+        echo "  ❌ プロジェクト: 不在"
+    fi
+    
+    if [ -d "$PYTHON_VENV" ]; then
+        echo "  ✅ Python仮想環境: 存在"
+    else
+        echo "  ❌ Python仮想環境: 不在"
+    fi
+    
+    echo ""
+    log_warn "⚠️  リセット対象:"
+    echo "  • systemdサービスの停止・無効化"
+    echo "  • サービスファイルの削除"
+    echo "  • プロジェクトファイルのバックアップ"
+    echo "  • Python依存関係のクリア"
+    echo "  • ログファイルのアーカイブ"
+    echo ""
+    log_info "ℹ️  保持されるもの:"
+    echo "  • データファイル (data/)"
+    echo "  • Google Drive認証情報"
+    echo "  • 録音ファイル"
+    echo "  • 設定ファイル (config.yaml)"
+    echo ""
+    
+    read -p "リセットを実行しますか？ (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "リセットをキャンセルしました"
+        exit 0
+    fi
+    
+    # 1. systemdサービス停止・無効化
+    log_info "1. systemdサービス停止..."
+    if systemctl is-active --quiet ${SERVICE_NAME}.service; then
+        sudo systemctl stop ${SERVICE_NAME}.service
+        log_info "  ✅ サービス停止完了"
+    else
+        log_info "  ℹ️  サービスは既に停止中"
+    fi
+    
+    if systemctl is-enabled ${SERVICE_NAME}.service >/dev/null 2>&1; then
+        sudo systemctl disable ${SERVICE_NAME}.service
+        log_info "  ✅ 自動起動無効化完了"
+    else
+        log_info "  ℹ️  自動起動は既に無効"
+    fi
+    
+    # 2. サービスファイル削除
+    log_info "2. サービスファイル削除..."
+    if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+        sudo rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+        sudo systemctl daemon-reload
+        log_info "  ✅ サービスファイル削除完了"
+    else
+        log_info "  ℹ️  サービスファイルは存在しません"
+    fi
+    
+    # 3. プロジェクトファイルのバックアップ
+    log_info "3. プロジェクトファイルバックアップ..."
+    if [ -d "$PROJECT_DIR" ]; then
+        BACKUP_DIR="${CURRENT_DIR}/backup_$(date +%Y%m%d_%H%M%S)"
+        mkdir -p "$BACKUP_DIR"
+        
+        # 設定ファイルとapp.pyのバックアップ
+        cp "$PROJECT_DIR/config.yaml" "$BACKUP_DIR/" 2>/dev/null || true
+        cp "$PROJECT_DIR/app.py" "$BACKUP_DIR/" 2>/dev/null || true
+        cp -r "$PROJECT_DIR/config" "$BACKUP_DIR/" 2>/dev/null || true
+        
+        # requirements.txtのバックアップ
+        cp "$PROJECT_DIR/requirements.txt" "$BACKUP_DIR/" 2>/dev/null || true
+        
+        log_info "  ✅ バックアップ完了: $BACKUP_DIR"
+    else
+        log_info "  ℹ️  プロジェクトディレクトリが存在しません"
+    fi
+    
+    # 4. Python依存関係クリア
+    log_info "4. Python依存関係クリア..."
+    if [ -d "$PYTHON_VENV" ]; then
+        # pipパッケージ一覧をバックアップ
+        if [ -n "$BACKUP_DIR" ]; then
+            source "$PYTHON_VENV/bin/activate"
+            pip freeze > "$BACKUP_DIR/requirements_backup.txt" 2>/dev/null || true
+            deactivate
+        fi
+        
+        # venvを再作成
+        rm -rf "$PYTHON_VENV"
+        python3 -m venv "$PYTHON_VENV"
+        source "$PYTHON_VENV/bin/activate"
+        pip install --upgrade pip
+        deactivate
+        
+        log_info "  ✅ Python仮想環境再作成完了"
+    else
+        log_info "  ℹ️  Python仮想環境が存在しません"
+    fi
+    
+    # 5. ログファイルアーカイブ
+    log_info "5. ログファイルアーカイブ..."
+    if [ -n "$BACKUP_DIR" ]; then
+        # systemdログのバックアップ
+        sudo journalctl -u ${SERVICE_NAME}.service --no-pager > "$BACKUP_DIR/service_logs.txt" 2>/dev/null || true
+        log_info "  ✅ ログアーカイブ完了"
+    fi
+    
+    # 6. キャッシュクリア
+    log_info "6. キャッシュクリア..."
+    if [ -d "$PROJECT_DIR/__pycache__" ]; then
+        rm -rf "$PROJECT_DIR/__pycache__"
+    fi
+    find "$PROJECT_DIR" -name "*.pyc" -delete 2>/dev/null || true
+    find "$PROJECT_DIR" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+    log_info "  ✅ キャッシュクリア完了"
+    
+    echo ""
+    log_info "🎉 環境リセット完了！"
+    echo "============================================"
+    echo ""
+    log_info "📁 バックアップ場所: $BACKUP_DIR"
+    echo "  • config.yaml - 設定ファイル"
+    echo "  • app.py - メインアプリケーション"
+    echo "  • requirements_backup.txt - Pythonパッケージ一覧"
+    echo "  • service_logs.txt - サービスログ"
+    echo ""
+    log_info "🔄 次のステップ:"
+    echo "  1. 新しいプログラムをmonitoring-system/にコピー"
+    echo "  2. ./setup_autostart.sh を再実行して新規セットアップを選択"
+    echo "  3. 必要に応じてバックアップから設定を復元"
+    echo ""
+}
+
+# ==================== 完全アンインストール関数 ====================
+uninstall_completely() {
+    log_warn "🗑️  完全アンインストール開始..."
+    echo ""
+    log_error "⚠️  警告: この操作は以下を完全に削除します！"
+    echo "  • ラズパイ監視システムの全ファイル"
+    echo "  • systemdサービス設定"
+    echo "  • Python仮想環境"
+    echo "  • データファイル（録音ファイル、Google Drive認証情報等）"
+    echo "  • ログファイル"
+    echo "  • バックアップファイル"
+    echo ""
+    echo "📝 削除対象:"
+    [ -d "$PROJECT_DIR" ] && echo "  ✅ $PROJECT_DIR"
+    [ -d "$PYTHON_VENV" ] && echo "  ✅ $PYTHON_VENV"
+    [ -d "${CURRENT_DIR}/data" ] && echo "  ✅ ${CURRENT_DIR}/data"
+    [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ] && echo "  ✅ /etc/systemd/system/${SERVICE_NAME}.service"
+    find "$CURRENT_DIR" -maxdepth 1 -name "backup_*" -type d 2>/dev/null | head -5 | while read backup; do
+        echo "  ✅ $backup"
+    done
+    
+    echo ""
+    read -p "本当に完全アンインストールしますか？ (yes/no): " -r
+    if [[ ! $REPLY = "yes" ]]; then
+        log_info "アンインストールをキャンセルしました"
+        exit 0
+    fi
+    
+    # サービス停止・無効化
+    if systemctl is-active --quiet ${SERVICE_NAME}.service; then
+        sudo systemctl stop ${SERVICE_NAME}.service
+    fi
+    if systemctl is-enabled ${SERVICE_NAME}.service >/dev/null 2>&1; then
+        sudo systemctl disable ${SERVICE_NAME}.service
+    fi
+    
+    # サービスファイル削除
+    sudo rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+    sudo systemctl daemon-reload
+    
+    # プロジェクトファイル削除
+    rm -rf "$PROJECT_DIR"
+    rm -rf "$PYTHON_VENV"
+    rm -rf "${CURRENT_DIR}/data"
+    
+    # バックアップ削除
+    find "$CURRENT_DIR" -maxdepth 1 -name "backup_*" -type d -exec rm -rf {} + 2>/dev/null || true
+    
+    # 管理スクリプト削除
+    rm -f "${CURRENT_DIR}/test_autostart.sh"
+    rm -f "${CURRENT_DIR}/system_info.txt"
+    
+    log_info "✅ 完全アンインストール完了"
+}
+
+# ==================== 状態確認関数 ====================
+check_status() {
+    log_info "📋 現在の設定状態確認"
+    echo "==========================================="
+    
+    # システム情報
+    echo "🖥️  システム情報:"
+    echo "  環境: $ENVIRONMENT"
+    echo "  ユーザー: $USER"
+    echo "  ホスト名: $(hostname)"
+    echo "  OS: $(uname -a)"
+    echo ""
+    
+    # ファイル構造
+    echo "📁 ファイル構造:"
+    if [ -d "$PROJECT_DIR" ]; then
+        echo "  ✅ プロジェクト: $PROJECT_DIR"
+        if [ -f "$PROJECT_DIR/app.py" ]; then
+            echo "    ✅ app.py"
+        else
+            echo "    ❌ app.py (不在)"
+        fi
+        if [ -f "$PROJECT_DIR/config.yaml" ]; then
+            echo "    ✅ config.yaml"
+        else
+            echo "    ❌ config.yaml (不在)"
+        fi
+    else
+        echo "  ❌ プロジェクト: 不在"
+    fi
+    
+    if [ -d "$PYTHON_VENV" ]; then
+        echo "  ✅ Python仮想環境: $PYTHON_VENV"
+        if [ -f "$PYTHON_VENV/bin/python" ]; then
+            PYTHON_VERSION=$("$PYTHON_VENV/bin/python" --version 2>&1)
+            echo "    ✅ $PYTHON_VERSION"
+        fi
+    else
+        echo "  ❌ Python仮想環境: 不在"
+    fi
+    
+    if [ -d "${CURRENT_DIR}/data" ]; then
+        echo "  ✅ データディレクトリ: ${CURRENT_DIR}/data"
+        if [ -f "${CURRENT_DIR}/data/credentials/credentials.json" ]; then
+            echo "    ✅ Google Drive認証"
+        else
+            echo "    ❌ Google Drive認証 (未設定)"
+        fi
+        
+        RECORDING_COUNT=$(find "${CURRENT_DIR}/data/recordings" -name "*.wav" 2>/dev/null | wc -l)
+        echo "    📼 録音ファイル: ${RECORDING_COUNT}個"
+    else
+        echo "  ❌ データディレクトリ: 不在"
+    fi
+    echo ""
+    
+    # systemdサービス状態
+    echo "⚙️  systemdサービス:"
+    if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+        echo "  ✅ サービスファイル: 存在"
+        
+        if systemctl is-enabled ${SERVICE_NAME}.service >/dev/null 2>&1; then
+            echo "  ✅ 自動起動: 有効"
+        else
+            echo "  ❌ 自動起動: 無効"
+        fi
+        
+        if systemctl is-active --quiet ${SERVICE_NAME}.service; then
+            echo "  🟢 サービス状態: 稼働中"
+            
+            # ポート確認
+            if ss -tlnp | grep -q ":5000"; then
+                echo "  ✅ ポート5000: リスン中"
+            else
+                echo "  ❌ ポート5000: 未使用"
+            fi
+            
+            # HTTP応答確認
+            if curl -f -s http://localhost:5000 > /dev/null 2>&1; then
+                echo "  ✅ HTTP応答: 正常"
+            else
+                echo "  ❌ HTTP応答: 異常"
+            fi
+        else
+            echo "  🔴 サービス状態: 停止中"
+        fi
+    else
+        echo "  ❌ サービスファイル: 不在"
+        echo "  ❌ 自動起動: 未設定"
+        echo "  ❌ サービス状態: 未設定"
+    fi
+    echo ""
+    
+    # ネットワーク情報
+    echo "🌐 ネットワーク情報:"
+    if command -v ip &> /dev/null; then
+        LOCAL_IPS=$(ip addr show | grep -E 'inet ' | grep -v 127.0.0.1 | awk '{print $2}' | cut -d/ -f1)
+        echo "  📍 ローカルIP:"
+        echo "$LOCAL_IPS" | while read ip; do
+            [ -n "$ip" ] && echo "    http://$ip:5000"
+        done
+    fi
+    
+    if command -v tailscale &> /dev/null; then
+        TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo "未設定")
+        if [ "$TAILSCALE_IP" != "未設定" ]; then
+            echo "  🔒 Tailscale: http://$TAILSCALE_IP:5000"
+        else
+            echo "  ❌ Tailscale: 未設定"
+        fi
+    else
+        echo "  ❌ Tailscale: 未インストール"
+    fi
+    echo ""
+    
+    # 最近のログ
+    echo "📜 最近のログ (最新5行):"
+    if systemctl is-active --quiet ${SERVICE_NAME}.service; then
+        sudo journalctl -u ${SERVICE_NAME}.service -n 5 --no-pager 2>/dev/null || echo "  ログを取得できませんでした"
+    else
+        echo "  サービスが停止中のためログなし"
+    fi
+    echo ""
+    
+    # バックアップ一覧
+    echo "📦 バックアップ一覧:"
+    BACKUP_COUNT=$(find "$CURRENT_DIR" -maxdepth 1 -name "backup_*" -type d 2>/dev/null | wc -l)
+    if [ $BACKUP_COUNT -gt 0 ]; then
+        echo "  📁 バックアップ数: ${BACKUP_COUNT}個"
+        find "$CURRENT_DIR" -maxdepth 1 -name "backup_*" -type d 2>/dev/null | sort -r | head -3 | while read backup; do
+            BACKUP_SIZE=$(du -sh "$backup" 2>/dev/null | cut -f1)
+            BACKUP_NAME=$(basename "$backup")
+            echo "    $BACKUP_NAME ($BACKUP_SIZE)"
+        done
+        [ $BACKUP_COUNT -gt 3 ] && echo "    ... 他 $((BACKUP_COUNT - 3))個"
+    else
+        echo "  📁 バックアップ: なし"
+    fi
+    echo ""
+    
+    # 管理コマンド
+    echo "🔧 管理コマンド:"
+    echo "  sudo systemctl status ${SERVICE_NAME}     # 詳細状態"
+    echo "  sudo systemctl restart ${SERVICE_NAME}    # 再起動"
+    echo "  sudo journalctl -u ${SERVICE_NAME} -f     # ログ監視"
+    echo "  ./test_autostart.sh                      # テスト実行"
+    echo ""
+}
+
+# ==================== メインフロー ====================
+
+case $SETUP_MODE in
+    "1")
+        log_info "🏠 新規セットアップモードを選択"
+        # 既存のセットアップロジックを実行
+        ;;
 
 case $ENVIRONMENT in
     "wsl2")
