@@ -1,111 +1,247 @@
-# 🚀 Raspberry Pi ネットワーク監視システム - セットアップガイド
+# 🔧 環境構築ツール
 
-## 📋 何をインストールするか
+**Raspberry Pi ネットワーク監視システム 環境構築専用**
 
-このプロジェクトは以下の機能を提供します：
+## 🎯 概要
 
-✅ **ネットワーク監視**: WiFi/有線/モバイル接続状態の監視  
-✅ **接続機器スキャン**: ローカルネットワーク内のデバイス一覧  
-✅ **Google Drive連携**: 監視データをクラウドに自動保存  
-✅ **Tailscale VPN**: 遠隔アクセス（オプション）  
-✅ **スマホ対応UI**: レスポンシブWebインターフェース  
+このディレクトリには、システム環境を自動構築するためのスクリプトが含まれています。
 
-## 🎯 推奨：ワンコマンドセットアップ
+## 📦 スクリプト一覧
+
+### メイン構築スクリプト
+
+| スクリプト | 機能 | 用途 |
+|-----------|------|------|
+| `setup_complete.sh` | 統合セットアップ | **推奨**: 全環境を自動構築 |
+| `setup_network_tools.sh` | ネットワークツール | 監視ツールのインストール |
+| `setup_gdrive.py` | Google Drive認証 | クラウド連携設定 |
+
+### メンテナンススクリプト
+
+| スクリプト | 機能 | 用途 |
+|-----------|------|------|
+| `cleanup_environment.sh` | 環境クリーンアップ | 一時ファイル・キャッシュ削除 |
+| `reset_and_setup.sh` | 完全リセット | 環境リセット+再構築 |
+
+## 🚀 基本的な使用方法
+
+### 1. 初回セットアップ（推奨）
 
 ```bash
-# プロジェクトフォルダで実行
+# プロジェクトディレクトリで実行
 cd environment-setup
-chmod +x setup_complete.sh
+chmod +x *.sh
 ./setup_complete.sh
 ```
 
-**これだけで全ての環境が完成します！**（所要時間：約5-10分）
+**これだけで完了！** 以下が自動実行されます：
+- システムパッケージ更新
+- Python仮想環境作成
+- 依存関係インストール
+- ネットワークツール導入
+- Tailscale VPNインストール
 
-## 📱 セットアップ後の使用方法
+### 2. Google Drive認証設定
 
-### 1. アプリケーション起動
 ```bash
-cd monitoring-system
-source ../venv/bin/activate
-python app.py
+# 認証ファイル配置後に実行
+python setup_gdrive.py
 ```
 
-### 2. ブラウザでアクセス
-- **ローカル**: `http://localhost:5000`
-- **Tailscale**: `http://[tailscale-ip]:5000`
+## 🔧 個別スクリプトの使用
 
-### 3. Google Drive連携設定
-1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクト作成
-2. Google Drive API を有効化
-3. OAuth 2.0 認証情報を作成（デスクトップアプリ）
-4. `credentials.json` を `data/credentials/` に配置
-5. 初回アクセス時にブラウザで認証
+### ネットワークツールのみインストール
 
-## 🔧 個別セットアップ（必要な場合のみ）
-
-### Google Drive認証のみ設定
 ```bash
-python environment-setup/setup_gdrive.py
+sudo ./setup_network_tools.sh
 ```
 
-### ネットワークツールのみ追加
+**インストールされるツール:**
+- nmap（ネットワークスキャン）
+- traceroute（経路追跡）  
+- wireless-tools（WiFi監視）
+- net-tools（基本ネットワーク）
+- dnsutils（DNS診断）
+
+### 環境のクリーンアップ
+
 ```bash
-sudo ./environment-setup/setup_network_tools.sh
+# 一時ファイル削除
+./cleanup_environment.sh
+
+# 完全リセット + 再構築
+./reset_and_setup.sh
 ```
+
+## 🎯 対応環境
+
+### 自動検出される環境
+
+- **Raspberry Pi**: 自動的に本番モードで設定
+- **WSL2**: テスト・開発モード
+- **Ubuntu/Debian**: 手動選択可能
+- **その他Linux**: 基本的な互換モード
+
+### 動作確認済み環境
+
+- Raspberry Pi OS (Bullseye/Bookworm)
+- Ubuntu 20.04 LTS / 22.04 LTS
+- Debian 11 / 12
+- Windows WSL2 (Ubuntu)
 
 ## 🛠️ トラブルシューティング
 
 ### 権限エラー
 ```bash
-chmod +x environment-setup/*.sh
+# 実行権限付与
+chmod +x *.sh
+
+# sudoでのスクリプト実行
+sudo ./setup_complete.sh
 ```
 
-### 依存関係エラー
+### パッケージインストールエラー
 ```bash
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r monitoring-system/requirements.txt
+# パッケージリスト更新
+sudo apt update
+
+# 壊れた依存関係修復
+sudo apt --fix-broken install
+
+# 再試行
+./setup_complete.sh
 ```
 
-### 環境リセット
+### Python環境エラー
 ```bash
-# 完全リセット（推奨）
-./environment-setup/reset_and_setup.sh
+# Python開発パッケージ
+sudo apt install python3-dev python3-setuptools
 
-# または段階的リセット
-./environment-setup/cleanup_environment.sh
-./environment-setup/setup_complete.sh
+# pip更新
+python3 -m pip install --upgrade pip
+
+# 仮想環境再作成
+rm -rf ../venv
+python3 -m venv ../venv
 ```
 
-### Tailscale認証
+### ネットワークツールエラー
 ```bash
-sudo tailscale up
-# ブラウザで認証URLにアクセス
+# 個別インストール
+sudo apt install net-tools wireless-tools iputils-ping
+sudo apt install nmap traceroute dnsutils
 ```
 
-## 📊 動作環境
+## 📋 セットアップ詳細
 
-- **推奨**: Raspberry Pi OS（Bullseye/Bookworm）
-- **対応**: Ubuntu Server/Desktop、Debian
-- **開発**: Windows（WSL2）、macOS
+### setup_complete.sh の実行内容
 
-## 🎉 セットアップ完了後
+1. **システム基盤構築**
+   - パッケージマネージャー更新
+   - 基本ツールインストール
+   - Python環境確認
 
-以下の機能が利用可能になります：
+2. **Python仮想環境**
+   - venv作成（../venv/）
+   - pip更新
+   - requirements.txtインストール
 
-1. **ネットワーク監視画面** (`/`)
-   - 接続状態とレイテンシ監視
-   - 接続機器一覧表示
-   - 速度測定機能
+3. **ネットワークツール**
+   - 監視用コマンドインストール
+   - 疎通テストツール導入
 
-2. **Google Drive連携** (`/gdrive`)
-   - 接続状態確認
-   - テストデータ送信
+4. **Tailscale VPN**
+   - 公式インストーラー実行
+   - サービス有効化
 
-3. **データ送信機能** (`/gdrive/test-upload`)
-   - テストデータまたはネットワークデータを選択
-   - JSON形式でGoogle Driveに保存
+5. **ディレクトリ構造**
+   - 必要フォルダ作成
+   - 権限設定
 
-## 📞 サポート
+### cleanup_environment.sh の動作
 
-問題が発生した場合は、各スクリプトのログメッセージを確認してください。エラーメッセージが表示された場合は、該当する依存関係を個別にインストールしてください。
+1. **プロセス確認**
+   - 実行中アプリ検出
+   - 安全停止確認
+
+2. **ファイル削除**
+   - Python仮想環境削除
+   - キャッシュファイル削除
+   - 一時ファイル削除
+
+3. **設定保持**
+   - credentials.json保持
+   - config.yaml保持
+   - 重要設定ファイル保護
+
+## 🔄 更新・メンテナンス
+
+### 環境更新手順
+
+```bash
+# 1. 最新コード取得
+git pull
+
+# 2. 環境リセット
+./reset_and_setup.sh
+
+# 3. アプリ再起動
+cd ../app_management
+sudo ./app_autostart.sh
+```
+
+### 定期メンテナンス
+
+```bash
+# 月次：パッケージ更新
+sudo apt update && sudo apt upgrade
+
+# 四半期：完全リフレッシュ
+./reset_and_setup.sh
+```
+
+## 📊 作成されるファイル・フォルダ
+
+### プロジェクト構造
+```
+raspi-remote-monitoring/
+├── venv/                    # Python仮想環境
+├── monitoring-system/       # メインアプリ
+│   ├── data/               # データ保存
+│   │   ├── credentials/    # 認証情報
+│   │   ├── recordings/     # 録音ファイル
+│   │   └── logs/          # ログファイル
+│   └── requirements.txt    # Python依存関係
+└── environment-setup/       # このディレクトリ
+```
+
+### システムファイル（本番環境のみ）
+- `/etc/systemd/system/raspi-monitoring.service`
+- `/usr/local/bin/tailscale`
+
+## 🎯 次のステップ
+
+環境構築完了後：
+
+1. **Google Drive認証設定**
+   ```bash
+   python setup_gdrive.py
+   ```
+
+2. **アプリケーション起動**
+   ```bash
+   cd ../app_management
+   ./app_autostart.sh
+   ```
+
+3. **動作確認**
+   ```bash
+   ./app_status.sh
+   ```
+
+4. **ブラウザアクセス**
+   - http://localhost:5000
+
+---
+
+🔧 **環境構築に関する質問は、メインの [セットアップガイド](../SETUP.md) も参照してください。**
