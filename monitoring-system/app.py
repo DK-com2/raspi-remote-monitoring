@@ -561,6 +561,192 @@ def api_gdrive_status():
     
     return jsonify(gdrive_data)
 
+@app.route('/api/gdrive/test-upload', methods=['POST'])
+def api_gdrive_test_upload():
+    """Google DriveテストアップロードAPI"""
+    if not gdrive_manager:
+        return jsonify({
+            'success': False,
+            'message': 'Google Drive機能が無効です'
+        }), 500
+    
+    try:
+        # 設定から録音ディレクトリを取得
+        recordings_dir = data_dir / "recordings"
+        
+        if not os.path.exists(recordings_dir):
+            return jsonify({
+                'success': False,
+                'message': f'録音ディレクトリが見つかりません: {recordings_dir}'
+            }), 404
+        
+        # 録音ファイルを検索（最新の.wavファイル）
+        recording_files = []
+        for filename in os.listdir(recordings_dir):
+            if filename.endswith('.wav'):
+                filepath = os.path.join(recordings_dir, filename)
+                file_stat = os.stat(filepath)
+                recording_files.append({
+                    'filename': filename,
+                    'filepath': filepath,
+                    'size': file_stat.st_size,
+                    'mtime': file_stat.st_mtime
+                })
+        
+        if not recording_files:
+            return jsonify({
+                'success': False,
+                'message': 'アップロードする録音ファイルが見つかりません'
+            }), 404
+        
+        # 最新のファイルを選択（更新時刻でソート）
+        latest_file = sorted(recording_files, key=lambda x: x['mtime'], reverse=True)[0]
+        
+        # Google Driveにアップロード
+        upload_result = gdrive_manager.upload_file(
+            file_path=latest_file['filepath'],
+            filename=f"raspi_recording_{latest_file['filename']}"
+        )
+        
+        if upload_result['success']:
+            # 最終アップロード情報を更新
+            global gdrive_data
+            gdrive_data['last_upload'] = {
+                'filename': upload_result['filename'],
+                'data_type': 'audio/wav',
+                'upload_time': upload_result['upload_time'],
+                'web_link': upload_result.get('web_link'),
+                'file_size': upload_result.get('file_size'),
+                'original_file': latest_file['filename']
+            }
+            
+            return jsonify({
+                'success': True,
+                'message': f"録音ファイル '{latest_file['filename']}' をGoogle Driveにアップロードしました",
+                'upload_info': upload_result,
+                'original_file': latest_file
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f"アップロードに失敗しました: {upload_result['message']}"
+            }), 500
+            
+    except Exception as e:
+        print(f"Google Drive test upload error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'テストアップロードエラー: {str(e)}'
+        }), 500
+
+@app.route('/api/gdrive/recording-files')
+def api_gdrive_recording_files():
+    """Google Driveアップロード用録音ファイル一覧API"""
+    try:
+        recordings_dir = data_dir / "recordings"
+        
+        if not os.path.exists(recordings_dir):
+            return jsonify({
+                'files': [],
+                'count': 0,
+                'message': '録音ディレクトリが見つかりません'
+            })
+        
+        recording_files = []
+        for filename in os.listdir(recordings_dir):
+            if filename.endswith('.wav'):
+                filepath = os.path.join(recordings_dir, filename)
+                file_stat = os.stat(filepath)
+                recording_files.append({
+                    'filename': filename,
+                    'size': file_stat.st_size,
+                    'created': datetime.fromtimestamp(file_stat.st_ctime).strftime('%Y-%m-%d %H:%M:%S'),
+                    'modified': datetime.fromtimestamp(file_stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                })
+        
+        # 更新時刻でソート（最新が上）
+        recording_files.sort(key=lambda x: x['modified'], reverse=True)
+        
+        return jsonify({
+            'files': recording_files,
+            'count': len(recording_files),
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'directory': str(recordings_dir)
+        })
+        
+    except Exception as e:
+        print(f"Recording files list error: {e}")
+        return jsonify({
+            'files': [],
+            'count': 0,
+            'error': str(e),
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }), 500
+
+@app.route('/api/gdrive/upload-file', methods=['POST'])
+def api_gdrive_upload_file():
+    """Google Drive指定ファイルアップロードAPI"""
+    if not gdrive_manager:
+        return jsonify({
+            'success': False,
+            'message': 'Google Drive機能が無効です'
+        }), 500
+    
+    try:
+        data = request.get_json()
+        filename = data.get('filename')
+        
+        if not filename:
+            return jsonify({
+                'success': False,
+                'message': 'ファイル名が指定されていません'
+            }), 400
+        
+        recordings_dir = data_dir / "recordings"
+        filepath = os.path.join(recordings_dir, filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({
+                'success': False,
+                'message': f'ファイルが見つかりません: {filename}'
+            }), 404
+        
+        # Google Driveにアップロード
+        upload_result = gdrive_manager.upload_file(
+            file_path=filepath,
+            filename=f"raspi_recording_{filename}"
+        )
+        
+        if upload_result['success']:
+            # 最終アップロード情報を更新
+            global gdrive_data
+            gdrive_data['last_upload'] = {
+                'filename': upload_result['filename'],
+                'data_type': 'audio/wav',
+                'upload_time': upload_result['upload_time'],
+                'web_link': upload_result.get('web_link'),
+                'file_size': upload_result.get('file_size'),
+                'original_file': filename
+            }
+            
+            return jsonify({
+                'success': True,
+                'message': f"録音ファイル '{filename}' をGoogle Driveにアップロードしました",
+                'upload_info': upload_result
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f"アップロードに失敗しました: {upload_result['message']}"
+            }), 500
+            
+    except Exception as e:
+        print(f"Google Drive file upload error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'ファイルアップロードエラー: {str(e)}'
+        }), 500
+
 # ========================================
 # バックグラウンド処理
 # ========================================

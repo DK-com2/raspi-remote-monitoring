@@ -386,6 +386,19 @@
             <div id="upload-details"></div>
         </div>
 
+        <!-- 録音ファイル選択 -->
+        <div class="section" id="recording-files-section">
+            <div class="section-title">
+                🎤 録音ファイル選択
+            </div>
+            <div id="recording-files-list">
+                <div style="text-align: center; color: #6c757d; padding: 20px;">
+                    <div class="loading"></div>
+                    <div style="margin-top: 10px;">ファイル情報を読み込み中...</div>
+                </div>
+            </div>
+        </div>
+
         <!-- アクションボタン -->
         <div class="action-buttons">
             <button class="btn btn-primary" onclick="refreshStatus()" id="refresh-btn">
@@ -441,6 +454,7 @@
             async init() {
                 console.log('GDrive Manager initializing...');
                 await this.updateStatus();
+                await this.loadRecordingFiles();
                 this.startAutoUpdate();
             }
 
@@ -586,6 +600,7 @@
             startAutoUpdate() {
                 this.updateInterval = setInterval(() => {
                     this.updateStatus();
+                    this.loadRecordingFiles();
                 }, 30000); // 30秒ごと
             }
 
@@ -594,6 +609,84 @@
                     clearInterval(this.updateInterval);
                     this.updateInterval = null;
                 }
+            }
+
+            async loadRecordingFiles() {
+                try {
+                    const response = await fetch('/api/gdrive/recording-files');
+                    if (!response.ok) {
+                        throw new Error(`API error: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    this.updateRecordingFilesList(data);
+                    
+                } catch (error) {
+                    console.error('Recording files load error:', error);
+                    this.showRecordingFilesError('録音ファイルの読み込みに失敗しました');
+                }
+            }
+
+            updateRecordingFilesList(data) {
+                const filesList = document.getElementById('recording-files-list');
+                
+                if (data.error) {
+                    this.showRecordingFilesError(data.error);
+                    return;
+                }
+
+                if (data.files && data.files.length > 0) {
+                    filesList.innerHTML = data.files.map((file, index) => `
+                        <div class="upload-item" style="${index >= 5 ? 'display: none;' : ''}">
+                            <div class="upload-info">
+                                <div class="upload-name">${file.filename}</div>
+                                <div class="upload-details">
+                                    サイズ: ${this.formatFileSize(file.size)} | 
+                                    作成: ${file.created} | 
+                                    更新: ${file.modified}
+                                </div>
+                            </div>
+                            <div>
+                                <button class="btn btn-success" 
+                                        onclick="uploadSpecificFile('${file.filename}')" 
+                                        style="padding: 8px 15px; font-size: 14px;">
+                                    📤 アップロード
+                                </button>
+                            </div>
+                        </div>
+                    `).join('') + 
+                    (data.files.length > 5 ? `
+                        <div style="text-align: center; margin-top: 15px;">
+                            <button class="btn btn-secondary" onclick="toggleAllRecordingFiles()" 
+                                    style="padding: 8px 15px; font-size: 14px;">
+                                すべて表示 (${data.files.length}件)
+                            </button>
+                        </div>
+                    ` : '');
+                } else {
+                    filesList.innerHTML = `
+                        <div style="text-align: center; color: #6c757d; padding: 20px;">
+                            🎤 録音ファイルが見つかりません
+                        </div>
+                    `;
+                }
+            }
+
+            showRecordingFilesError(message) {
+                const filesList = document.getElementById('recording-files-list');
+                filesList.innerHTML = `
+                    <div style="text-align: center; color: #dc3545; padding: 20px;">
+                        ⚠️ ${this.escapeHtml(message)}
+                    </div>
+                `;
+            }
+
+            formatFileSize(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
             }
         }
 
@@ -621,16 +714,134 @@
             testBtn.disabled = true;
             testBtn.innerHTML = '<span class="loading"></span> 送信中...';
             
-            // 実際のテストアップロード処理は将来実装
-            setTimeout(() => {
+            // 実際のテストアップロード処理
+            fetch('/api/gdrive/test-upload', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
                 testBtn.disabled = false;
                 testBtn.innerHTML = '<span>📤</span> テスト送信';
-                alert('テストアップロード機能は開発中です。\n\n将来の機能:\n- テストファイルの自動生成\n- アップロード結果の確認\n- エラー詳細の表示');
-            }, 2000);
+                
+                if (data.success) {
+                    gdriveManager.showAlert(
+                        `アップロード成功: ${data.upload_info.filename}`, 
+                        'success'
+                    );
+                    
+                    // 状態を更新
+                    gdriveManager.updateStatus();
+                    
+                    // アップロード詳細を表示
+                    if (data.upload_info.web_link) {
+                        setTimeout(() => {
+                            if (confirm('アップロードが完了しました。\n\nGoogle Driveでファイルを開きますか？')) {
+                                window.open(data.upload_info.web_link, '_blank');
+                            }
+                        }, 1000);
+                    }
+                } else {
+                    gdriveManager.showAlert(
+                        `アップロード失敗: ${data.message}`, 
+                        'error'
+                    );
+                }
+            })
+            .catch(error => {
+                console.error('Upload error:', error);
+                testBtn.disabled = false;
+                testBtn.innerHTML = '<span>📤</span> テスト送信';
+                gdriveManager.showAlert('アップロード処理中にエラーが発生しました', 'error');
+            });
         }
 
         function authenticateGDrive() {
             alert('Google Drive認証機能は開発中です。\n\n現在の認証方法:\n1. credentials.jsonをdata/credentials/に配置\n2. アプリ再起動で自動認証\n3. ブラウザで認証画面が開きます');
+        }
+
+        function uploadSpecificFile(filename) {
+            if (confirm(`録音ファイル "${filename}" をGoogle Driveにアップロードしますか？`)) {
+                const uploadButtons = document.querySelectorAll(`button[onclick="uploadSpecificFile('${filename}')"]`);
+                uploadButtons.forEach(btn => {
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="loading"></span> 送信中...';
+                });
+                
+                fetch('/api/gdrive/upload-file', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ filename: filename })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    uploadButtons.forEach(btn => {
+                        btn.disabled = false;
+                        btn.innerHTML = '📤 アップロード';
+                    });
+                    
+                    if (data.success) {
+                        gdriveManager.showAlert(
+                            `アップロード成功: ${data.upload_info.filename}`,
+                            'success'
+                        );
+                        
+                        // 状態を更新
+                        gdriveManager.updateStatus();
+                        
+                        // Google Driveで開くか確認
+                        if (data.upload_info.web_link) {
+                            setTimeout(() => {
+                                if (confirm('アップロードが完了しました。\n\nGoogle Driveでファイルを開きますか？')) {
+                                    window.open(data.upload_info.web_link, '_blank');
+                                }
+                            }, 1000);
+                        }
+                    } else {
+                        gdriveManager.showAlert(
+                            `アップロード失敗: ${data.message}`,
+                            'error'
+                        );
+                    }
+                })
+                .catch(error => {
+                    console.error('Specific file upload error:', error);
+                    uploadButtons.forEach(btn => {
+                        btn.disabled = false;
+                        btn.innerHTML = '📤 アップロード';
+                    });
+                    gdriveManager.showAlert('アップロード処理中にエラーが発生しました', 'error');
+                });
+            }
+        }
+
+        function toggleAllRecordingFiles() {
+            const hiddenItems = document.querySelectorAll('#recording-files-list .upload-item[style*="display: none"]');
+            const toggleButton = document.querySelector('#recording-files-list button[onclick="toggleAllRecordingFiles()"]');
+            
+            if (hiddenItems.length > 0) {
+                // 非表示のアイテムを表示
+                hiddenItems.forEach(item => {
+                    item.style.display = 'flex';
+                });
+                toggleButton.textContent = '折りたたむ';
+            } else {
+                // す5個を除いて非表示に
+                const allItems = document.querySelectorAll('#recording-files-list .upload-item');
+                allItems.forEach((item, index) => {
+                    if (index >= 5) {
+                        item.style.display = 'none';
+                    }
+                });
+                
+                // ボタンテキストを更新
+                const totalCount = allItems.length;
+                toggleButton.innerHTML = `すべて表示 (${totalCount}件)`;
+            }
         }
 
         // 初期化
