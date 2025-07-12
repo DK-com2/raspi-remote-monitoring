@@ -226,12 +226,28 @@ def api_device_scan():
 
 @app.route('/api/crontab-status')
 def api_crontab_status():
-    """クロンタブ状態確認API（シンプル版）"""
+    """Crontab状態確認API（systemd対応版）"""
     try:
         import subprocess
+        import os
+        
+        # systemdサービス実行時の環境変数設定
+        env = os.environ.copy()
+        env.update({
+            'PATH': '/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin',
+            'USER': os.environ.get('USER', 'administrator'),
+            'HOME': os.environ.get('HOME', '/home/administrator'),
+            'LOGNAME': os.environ.get('USER', 'administrator')
+        })
         
         # crontab -l コマンドで現在のジョブ一覧を取得
-        result = subprocess.run(['crontab', '-l'], capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            ['crontab', '-l'], 
+            capture_output=True, 
+            text=True, 
+            timeout=10,
+            env=env
+        )
         
         if result.returncode == 0:
             # 成功時の処理
@@ -253,23 +269,31 @@ def api_crontab_status():
             return jsonify({
                 'status': 'active' if active_jobs > 0 else 'inactive',
                 'active_jobs': active_jobs,
-                'jobs': cron_lines[:5],  # 最初の5個のジョブを表示
+                'jobs': cron_lines[:10],  # 最初の10個のジョブを表示
                 'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'message': f'{active_jobs}個のアクティブジョブ' if active_jobs > 0 else 'アクティブなジョブなし'
+                'message': f'{active_jobs}個のアクティブジョブ' if active_jobs > 0 else 'アクティブなジョブなし',
+                'user': env.get('USER'),
+                'home': env.get('HOME')
             })
         else:
             # エラー時の処理
             error_message = 'crontabコマンドの実行に失敗しました'
             
             # よくあるエラーパターンの判定
-            stderr_lower = result.stderr.lower()
+            stderr_text = result.stderr.strip() if result.stderr else ''
+            stderr_lower = stderr_text.lower()
+            
             if 'no crontab' in stderr_lower:
                 error_message = 'このユーザーにはcrontabが設定されていません（正常状態）'
                 status = 'inactive'
             elif 'permission denied' in stderr_lower:
                 error_message = 'crontabへのアクセス権限がありません'
                 status = 'permission_error'
+            elif 'not found' in stderr_lower:
+                error_message = 'crontabコマンドが見つかりません'
+                status = 'command_not_found'
             else:
+                error_message = f'crontabエラー: {stderr_text}' if stderr_text else 'crontabコマンドの実行に失敗しました'
                 status = 'error'
             
             return jsonify({
@@ -277,7 +301,14 @@ def api_crontab_status():
                 'active_jobs': 0,
                 'jobs': [],
                 'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'message': error_message
+                'message': error_message,
+                'debug_info': {
+                    'returncode': result.returncode,
+                    'stderr': stderr_text,
+                    'user': env.get('USER'),
+                    'home': env.get('HOME'),
+                    'path': env.get('PATH')
+                }
             })
             
     except subprocess.TimeoutExpired:
@@ -288,13 +319,21 @@ def api_crontab_status():
             'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'message': 'crontabコマンドがタイムアウトしました'
         })
+    except FileNotFoundError:
+        return jsonify({
+            'status': 'command_not_found',
+            'active_jobs': 0,
+            'jobs': [],
+            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'message': 'crontabコマンドが見つかりません（システムにインストールされていない可能性）'
+        })
     except Exception as e:
         return jsonify({
             'status': 'error',
             'active_jobs': 0,
             'jobs': [],
             'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'message': f'エラー: {str(e)}'
+            'message': f'システムエラー: {str(e)}'
         })
 
 # ========================================
