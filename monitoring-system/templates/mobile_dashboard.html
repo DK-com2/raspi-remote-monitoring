@@ -35,10 +35,17 @@
         }
 
         .header h1 {
-            font-size: 24px;
-            font-weight: 300;
+            font-size: 32px;
+            font-weight: 600;
             color: #333;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            font-size: 18px;
+            font-weight: 500;
+            color: #666;
+            margin-bottom: 0;
         }
 
         .status-indicator {
@@ -185,34 +192,6 @@
             box-shadow: 0 8px 25px rgba(162, 155, 254, 0.4);
         }
 
-        .quick-status {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 15px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-
-        .quick-status-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-
-        .quick-status-row:last-child {
-            margin-bottom: 0;
-        }
-
-        .quick-status-label {
-            color: #666;
-        }
-
-        .quick-status-value {
-            font-weight: 600;
-            color: #333;
-        }
-
         .footer {
             text-align: center;
             margin-top: 20px;
@@ -321,22 +300,6 @@
         <div class="header">
             <h1>IoT管理<span class="status-indicator status-online" id="system-status"></span></h1>
             <p>Raspberry Pi 監視システム</p>
-        </div>
-
-        <!-- クイックステータス -->
-        <div class="quick-status">
-            <div class="quick-status-row">
-                <span class="quick-status-label">WiFi信号</span>
-                <span class="quick-status-value" id="wifi-strength">-</span>
-            </div>
-            <div class="quick-status-row">
-                <span class="quick-status-label">Tailscale</span>
-                <span class="quick-status-value" id="tailscale-status">-</span>
-            </div>
-            <div class="quick-status-row">
-                <span class="quick-status-label">録音デバイス</span>
-                <span class="quick-status-value" id="audio-devices">-</span>
-            </div>
         </div>
 
         <!-- メインダッシュボード -->
@@ -494,19 +457,6 @@
             }
 
             updateNetworkUI(data) {
-                // WiFi信号強度
-                const wifiStrength = data.signal_strength_percent || 0;
-                document.getElementById('wifi-strength').textContent = 
-                    wifiStrength > 0 ? `${wifiStrength}%` : '未接続';
-
-                // Tailscale状態
-                const tailscaleStatus = data.tailscale_status === 'connected' ? '接続中' : '切断';
-                document.getElementById('tailscale-status').textContent = tailscaleStatus;
-
-                // オーディオデバイス数
-                const deviceCount = data.connected_devices ? data.connected_devices.length : 0;
-                document.getElementById('audio-devices').textContent = `${deviceCount}台`;
-
                 // カードステータス更新
                 this.updateCardStatus('network-card-status', data.connection_status === 'connected');
                 this.updateCardStatus('tailscale-card-status', data.tailscale_status === 'connected');
