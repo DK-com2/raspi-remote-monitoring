@@ -147,7 +147,9 @@ def api_speed_test():
         'timestamp': datetime.now().strftime('%H:%M:%S')
     })
 
-# 信号強度、DNS情報は削除したが、デバイス管理は簡易版で保持
+# ========================================
+# デバイススキャンAPI
+# ========================================
 
 @app.route('/api/device-scan')
 def api_device_scan():
@@ -165,7 +167,6 @@ def api_device_scan():
                 for line in result.stdout.strip().split('\n'):
                     if line.strip():
                         # lsusbの出力を解析
-                        # 例: Bus 001 Device 002: ID 1d6b:0002 Linux Foundation 2.0 root hub
                         match = re.search(r'Bus\s+(\d+)\s+Device\s+(\d+):\s+ID\s+([0-9a-f:]+)\s+(.+)', line)
                         if match:
                             bus, device_num, device_id, description = match.groups()
@@ -202,33 +203,6 @@ def api_device_scan():
         except FileNotFoundError:
             print("lsusb command not found")
         
-        # /devディレクトリからオーディオデバイスを探す
-        try:
-            import os
-            audio_devices = []
-            
-            # ALSAデバイス
-            if os.path.exists('/proc/asound/cards'):
-                with open('/proc/asound/cards', 'r') as f:
-                    for line in f:
-                        if ':' in line and not line.strip().startswith(' '):
-                            card_info = line.strip()
-                            audio_devices.append({
-                                'name': f'オーディオカード: {card_info}',
-                                'type': 'オーディオ',
-                                'bus': 'ALSA',
-                                'device': 'N/A',
-                                'id': 'alsa'
-                            })
-            
-            # 重複を避けてオーディオデバイスを追加
-            existing_audio = [d for d in devices if d['type'] == 'オーディオ']
-            if not existing_audio and audio_devices:
-                devices.extend(audio_devices)
-                
-        except Exception as e:
-            print(f"Audio device detection error: {e}")
-        
         return jsonify({
             'devices': devices,
             'count': len(devices),
@@ -246,87 +220,45 @@ def api_device_scan():
             'error': str(e)
         }), 500
 
+# ========================================
+# Crontab管理API
+# ========================================
+
 @app.route('/api/crontab-status')
 def api_crontab_status():
-    """クロンタブ状態確認API（改良版）"""
+    """クロンタブ状態確認API（シンプル版）"""
     try:
         import subprocess
-        import os
-        
-        # デバッグ情報
-        debug_info = {
-            'user': os.getenv('USER', 'unknown'),
-            'uid': os.getuid(),
-            'crontab_path': None
-        }
-        
-        # crontabコマンドの存在確認
-        which_result = subprocess.run(['which', 'crontab'], capture_output=True, text=True, timeout=5)
-        if which_result.returncode != 0:
-            return jsonify({
-                'status': 'error',
-                'active_jobs': 0,
-                'jobs': [],
-                'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'message': 'crontabコマンドが見つかりません',
-                'debug': debug_info
-            })
-        
-        debug_info['crontab_path'] = which_result.stdout.strip()
         
         # crontab -l コマンドで現在のジョブ一覧を取得
         result = subprocess.run(['crontab', '-l'], capture_output=True, text=True, timeout=10)
-        
-        debug_info.update({
-            'return_code': result.returncode,
-            'stdout_length': len(result.stdout),
-            'stderr': result.stderr.strip()
-        })
         
         if result.returncode == 0:
             # 成功時の処理
             all_lines = result.stdout.split('\n')
             cron_lines = []
-            invalid_lines = []
             
             for line in all_lines:
                 line = line.strip()
                 if not line or line.startswith('#'):
                     continue  # 空行やコメントをスキップ
                 
-                # cron文法の簡易チェック（フィールド数確認）
+                # 基本的なフィールド数チェック
                 fields = line.split()
-                if len(fields) >= 6:  # 最低6フィールド必要
+                if len(fields) >= 6:
                     cron_lines.append(line)
-                else:
-                    invalid_lines.append(line)
             
             active_jobs = len(cron_lines)
-            message = f'{active_jobs}個のアクティブジョブ'
-            
-            if invalid_lines:
-                message += f' (警告: {len(invalid_lines)}個の無効な行があります)'
-            
-            if active_jobs == 0 and not invalid_lines:
-                message = 'アクティブなジョブなし'
-            
-            debug_info.update({
-                'total_lines': len(all_lines),
-                'valid_jobs': active_jobs,
-                'invalid_lines': invalid_lines[:3] if invalid_lines else []
-            })
             
             return jsonify({
-                'status': 'active' if active_jobs > 0 else ('warning' if invalid_lines else 'inactive'),
+                'status': 'active' if active_jobs > 0 else 'inactive',
                 'active_jobs': active_jobs,
                 'jobs': cron_lines[:5],  # 最初の5個のジョブを表示
-                'invalid_jobs': invalid_lines[:3],  # 無効な行を最大3個表示
                 'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'message': message,
-                'debug': debug_info
+                'message': f'{active_jobs}個のアクティブジョブ' if active_jobs > 0 else 'アクティブなジョブなし'
             })
         else:
-            # エラー時の詳細処理
+            # エラー時の処理
             error_message = 'crontabコマンドの実行に失敗しました'
             
             # よくあるエラーパターンの判定
@@ -337,9 +269,6 @@ def api_crontab_status():
             elif 'permission denied' in stderr_lower:
                 error_message = 'crontabへのアクセス権限がありません'
                 status = 'permission_error'
-            elif 'command not found' in stderr_lower:
-                error_message = 'crontabコマンドがインストールされていません'
-                status = 'not_installed'
             else:
                 status = 'error'
             
@@ -348,8 +277,7 @@ def api_crontab_status():
                 'active_jobs': 0,
                 'jobs': [],
                 'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'message': error_message,
-                'debug': debug_info
+                'message': error_message
             })
             
     except subprocess.TimeoutExpired:
@@ -360,14 +288,6 @@ def api_crontab_status():
             'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'message': 'crontabコマンドがタイムアウトしました'
         })
-    except FileNotFoundError:
-        return jsonify({
-            'status': 'not_found',
-            'active_jobs': 0,
-            'jobs': [],
-            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'message': 'crontabコマンドが見つかりません'
-        })
     except Exception as e:
         return jsonify({
             'status': 'error',
@@ -377,18 +297,19 @@ def api_crontab_status():
             'message': f'エラー: {str(e)}'
         })
 
+# ========================================
+# Tailscale管理API
+# ========================================
+
 @app.route('/api/tailscale-status')
 def api_tailscale_status():
     """Tailscale状態確認API"""
     try:
         import subprocess
-        # tailscale status コマンドで状態確認
         result = subprocess.run(['tailscale', 'status'], capture_output=True, text=True, timeout=10)
         
         if result.returncode == 0:
             status_lines = result.stdout.strip().split('\n')
-            
-            # 基本情報を解析
             connected = 'offline' not in result.stdout.lower()
             
             # IP アドレスを抽出
@@ -400,14 +321,13 @@ def api_tailscale_status():
                         tailscale_ip = parts[0]
                         break
             
-            # 接続されたデバイス数を取得
             device_count = len([line for line in status_lines if line.strip() and not line.startswith('#')]) - 1
             
             return jsonify({
                 'status': 'connected' if connected else 'disconnected',
                 'ip_address': tailscale_ip,
                 'device_count': max(0, device_count),
-                'devices': status_lines[:10],  # 最初の10個のデバイス
+                'devices': status_lines[:10],
                 'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'message': 'Tailscale接続中' if connected else 'Tailscale切断中'
             })
@@ -440,90 +360,6 @@ def api_tailscale_status():
             'message': f'エラー: {str(e)}'
         })
 
-@app.route('/api/tailscale-details')
-def api_tailscale_details():
-    """テイルスケール詳細情報API"""
-    try:
-        import subprocess
-        
-        # Tailscale状態取得
-        status_result = subprocess.run(['tailscale', 'status'], capture_output=True, text=True, timeout=10)
-        
-        # ネットワークモニターから基本情報を取得
-        network_data = network_monitor.get_data()
-        
-        tailscale_info = {
-            'status': network_data.get('tailscale_status', 'unknown'),
-            'ip': network_data.get('tailscale_ip', 'unknown'),
-            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'devices': [],
-            'logs': [],
-            'connection_quality': 'unknown'
-        }
-        
-        if status_result.returncode == 0:
-            status_lines = status_result.stdout.strip().split('\n')
-            
-            # デバイス一覧を解析
-            devices = []
-            for line in status_lines:
-                if line.strip() and not line.startswith('#'):
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        # IPアドレスで始まる行をデバイスとして認識
-                        if '.' in parts[0] or ':' in parts[0]:
-                            devices.append({
-                                'ip': parts[0],
-                                'name': parts[1] if len(parts) > 1 else 'unknown',
-                                'status': 'online' if len(parts) > 2 and 'online' in parts[2] else 'unknown'
-                            })
-            
-            tailscale_info['devices'] = devices
-            
-            # 接続品質を判定
-            if tailscale_info['status'] == 'connected':
-                tailscale_info['connection_quality'] = 'good'
-            elif tailscale_info['status'] == 'disconnected':
-                tailscale_info['connection_quality'] = 'poor'
-            
-            # ログ情報を取得（簡易版）
-            try:
-                log_result = subprocess.run(['journalctl', '-u', 'tailscaled', '--no-pager', '-n', '10'], 
-                                          capture_output=True, text=True, timeout=5)
-                if log_result.returncode == 0:
-                    log_lines = log_result.stdout.strip().split('\n')[-5:]  # 最後の5行
-                    tailscale_info['logs'] = [line.strip() for line in log_lines if line.strip()]
-            except:
-                tailscale_info['logs'] = ['ログ情報を取得できません']
-            
-            tailscale_info['message'] = f'{len(devices)}個のデバイスが検出されました'
-        else:
-            tailscale_info['message'] = 'Tailscaleコマンドの実行に失敗しました'
-            tailscale_info['status'] = 'error'
-        
-        return jsonify(tailscale_info)
-        
-    except subprocess.TimeoutExpired:
-        return jsonify({
-            'status': 'timeout',
-            'ip': 'unknown',
-            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'devices': [],
-            'logs': [],
-            'connection_quality': 'poor',
-            'message': 'Tailscaleコマンドがタイムアウトしました'
-        })
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'ip': 'unknown',
-            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'devices': [],
-            'logs': [],
-            'connection_quality': 'poor',
-            'message': f'エラー: {str(e)}'
-        })
-
 # ========================================
 # 録音機能API
 # ========================================
@@ -543,167 +379,8 @@ def api_recording_devices():
         'timestamp': datetime.now().strftime('%H:%M:%S')
     })
 
-@app.route('/api/recording/start', methods=['POST'])
-def api_recording_start():
-    """録音開始API"""
-    try:
-        data = request.get_json() or {}
-        duration = int(data.get('duration', settings.recording['default_duration']))
-        device_id = data.get('device_id', 'default')
-        sample_rate = int(data.get('sample_rate', settings.recording['default_sample_rate']))
-        channels = int(data.get('channels', settings.recording['default_channels']))
-        
-        if duration < 1 or duration > 3600:
-            return jsonify({
-                'success': False,
-                'message': '録音時間は1秒から3600秒の間で指定してください'
-            }), 400
-        
-        result = audio_recorder.start_recording(duration, device_id, sample_rate, channels)
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'録音開始エラー: {str(e)}'
-        }), 500
-
-@app.route('/api/recording/stop', methods=['POST'])
-def api_recording_stop():
-    """録音停止API"""
-    try:
-        result = audio_recorder.stop_recording()
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'録音停止エラー: {str(e)}'
-        }), 500
-
-@app.route('/api/recording/status')
-def api_recording_status():
-    """録音状態API"""
-    return jsonify(audio_recorder.get_status())
-
-@app.route('/api/recording/list')
-def api_recording_list():
-    """録音ファイル一覧"""
-    try:
-        files = audio_recorder.list_recordings()
-        return jsonify({
-            'files': files,
-            'count': len(files),
-            'timestamp': datetime.now().strftime('%H:%M:%S')
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'error': f'ファイル一覧取得エラー: {str(e)}'
-        }), 500
-
-@app.route('/api/recording/download/<filename>')
-def api_recording_download(filename):
-    """録音ファイルダウンロード"""
-    try:
-        filepath = audio_recorder.get_file_path(filename)
-        
-        if not filepath:
-            return jsonify({
-                'error': 'ファイルが見つかりません'
-            }), 404
-        
-        return send_file(filepath, as_attachment=True)
-        
-    except Exception as e:
-        return jsonify({
-            'error': f'ダウンロードエラー: {str(e)}'
-        }), 500
-
-@app.route('/api/recording/upload-to-gdrive/<filename>', methods=['POST'])
-def api_recording_upload_to_gdrive(filename):
-    """録音ファイルをGoogle Driveにアップロード"""
-    global gdrive_data
-    
-    if not gdrive_manager:
-        return jsonify({
-            'success': False,
-            'message': 'Google Drive機能が無効です'
-        }), 500
-    
-    try:
-        # ファイルパスを取得
-        filepath = audio_recorder.get_file_path(filename)
-        
-        if not filepath:
-            return jsonify({
-                'success': False,
-                'message': 'ファイルが見つかりません'
-            }), 404
-        
-        # Google Driveにアップロード
-        result = gdrive_manager.upload_file(filepath, filename)
-        
-        # アップロード結果を保存
-        if result['success']:
-            gdrive_data['last_upload'] = {
-                'filename': result['filename'],
-                'upload_time': result['upload_time'],
-                'data_type': 'audio_recording',
-                'file_id': result.get('file_id'),
-                'web_link': result.get('web_link'),
-                'file_size': result.get('file_size')
-            }
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'アップロードエラー: {str(e)}'
-        }), 500
-
-@app.route('/api/gdrive-files')
-def api_gdrive_files():
-    """ファイル一覧API"""
-    if not gdrive_manager:
-        return jsonify({
-            'success': False,
-            'message': 'Google Drive機能が無効です'
-        }), 500
-    
-    try:
-        limit = int(request.args.get('limit', 20))
-        result = gdrive_manager.list_files(limit)
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'ファイル一覧取得エラー: {str(e)}'
-        }), 500
-
-@app.route('/api/gdrive-delete/<file_id>', methods=['DELETE'])
-def api_gdrive_delete(file_id):
-    """ファイル削除API"""
-    if not gdrive_manager:
-        return jsonify({
-            'success': False,
-            'message': 'Google Drive機能が無効です'
-        }), 500
-    
-    try:
-        result = gdrive_manager.delete_file(file_id)
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'ファイル削除エラー: {str(e)}'
-        }), 500
-
 # ========================================
-# Google Drive API（既存機能を維持）
+# Google Drive API
 # ========================================
 
 @app.route('/gdrive')
@@ -753,22 +430,10 @@ def api_gdrive_status():
 
 def network_monitor_loop():
     """ネットワーク監視ループ"""
-    device_scan_counter = 0
-    
     while True:
         try:
-            # ネットワークデータ更新
             network_monitor.update_data()
-            
-            # デバイススキャン（頻度を下げる）
-            device_scan_counter += 1
-            if device_scan_counter >= (settings.network['device_scan_interval'] // settings.network['update_interval']):
-                print("Scanning for connected devices...")
-                # デバイス検出機能は将来実装
-                device_scan_counter = 0
-            
             time.sleep(settings.network['update_interval'])
-            
         except Exception as e:
             print(f"Network monitor loop error: {e}")
             time.sleep(5)
@@ -791,8 +456,6 @@ if __name__ == '__main__':
     print(f"  - ネットワーク更新間隔: {settings.network['update_interval']}秒")
     print(f"  - 録音保存先: {audio_recorder.save_directory}")
     print(f"  - Google Drive: {'有効' if gdrive_manager else '無効'}")
-    
-    # データディレクトリは既に作成済み
     
     # バックグラウンド処理開始
     print("🔄 バックグラウンド処理を開始...")
