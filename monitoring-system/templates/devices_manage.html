@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>デバイス管理 - Raspberry Pi</title>
+    <title>USB デバイス管理 - Raspberry Pi</title>
     <style>
         * {
             margin: 0;
@@ -13,7 +13,7 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #fd79a8 0%, #e84393 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
             color: #333;
@@ -37,7 +37,7 @@
         .header h1 {
             font-size: 28px;
             font-weight: 600;
-            color: #e84393;
+            color: #667eea;
             margin-bottom: 8px;
             display: flex;
             align-items: center;
@@ -50,18 +50,7 @@
             height: 12px;
             border-radius: 50%;
             animation: pulse 2s infinite;
-        }
-
-        .status-online {
             background: #4CAF50;
-        }
-
-        .status-offline {
-            background: #f44336;
-        }
-
-        .status-scanning {
-            background: #FF9800;
         }
 
         @keyframes pulse {
@@ -74,6 +63,18 @@
             font-size: 14px;
         }
 
+        .info-banner {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         .summary-card {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -83,24 +84,14 @@
             text-align: center;
         }
 
-        .summary-row {
-            display: flex;
-            justify-content: space-around;
-            margin-top: 15px;
-        }
-
-        .summary-item {
-            text-align: center;
-        }
-
         .summary-number {
-            font-size: 24px;
+            font-size: 32px;
             font-weight: 600;
             margin-bottom: 5px;
         }
 
         .summary-label {
-            font-size: 12px;
+            font-size: 14px;
             opacity: 0.9;
         }
 
@@ -132,22 +123,10 @@
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
         }
 
-        .btn:active {
-            transform: translateY(0);
-        }
-
         .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
             transform: none;
-        }
-
-        .btn-secondary {
-            background: linear-gradient(135deg, #fd79a8 0%, #e84393 100%);
-        }
-
-        .btn-secondary:hover {
-            box-shadow: 0 6px 20px rgba(253, 121, 168, 0.4);
         }
 
         .devices-section {
@@ -164,90 +143,34 @@
             gap: 10px;
         }
 
-        .device-card {
+        .device-item {
             background: white;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 15px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-            border-left: 4px solid;
+            border-radius: 12px;
+            padding: 15px 20px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            border-left: 4px solid #4CAF50;
             transition: all 0.3s ease;
-        }
-
-        .device-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-        }
-
-        .device-card.online {
-            border-left-color: #4CAF50;
-        }
-
-        .device-card.offline {
-            border-left-color: #f44336;
-        }
-
-        .device-card.unknown {
-            border-left-color: #FF9800;
-        }
-
-        .device-header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 15px;
+            gap: 12px;
+        }
+
+        .device-item:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .device-icon {
+            font-size: 24px;
+            min-width: 32px;
+            text-align: center;
         }
 
         .device-name {
             font-size: 16px;
-            font-weight: 600;
-            color: #333;
-        }
-
-        .device-status {
-            font-size: 12px;
-            padding: 4px 8px;
-            border-radius: 8px;
             font-weight: 500;
-        }
-
-        .device-status.online {
-            background: #e8f5e8;
-            color: #4CAF50;
-        }
-
-        .device-status.offline {
-            background: #ffebee;
-            color: #f44336;
-        }
-
-        .device-status.unknown {
-            background: #fff3e0;
-            color: #FF9800;
-        }
-
-        .device-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            font-size: 14px;
-        }
-
-        .device-info-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        .device-info-label {
-            color: #666;
-            font-weight: 500;
-        }
-
-        .device-info-value {
             color: #333;
-            font-weight: 600;
         }
 
         .empty-state {
@@ -295,8 +218,8 @@
         }
 
         .nav-link:hover {
-            background: rgba(253, 121, 168, 0.1);
-            color: #e84393;
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
         }
 
         .last-update {
@@ -315,50 +238,6 @@
             .actions {
                 flex-direction: column;
             }
-
-            .device-info {
-                grid-template-columns: 1fr;
-            }
-
-            .summary-row {
-                flex-direction: column;
-                gap: 15px;
-            }
-        }
-
-        /* フィルタリング */
-        .filter-section {
-            margin-bottom: 20px;
-        }
-
-        .filter-buttons {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .filter-btn {
-            background: rgba(102, 126, 234, 0.1);
-            color: #667eea;
-            border: 1px solid rgba(102, 126, 234, 0.3);
-            border-radius: 20px;
-            padding: 6px 12px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .filter-btn.active {
-            background: #667eea;
-            color: white;
-        }
-
-        .filter-btn:hover {
-            background: rgba(102, 126, 234, 0.2);
-        }
-
-        .filter-btn.active:hover {
-            background: #5a6fd8;
         }
     </style>
 </head>
@@ -366,56 +245,34 @@
     <div class="container">
         <div class="header">
             <h1>
-                📱 デバイス管理
-                <span class="status-indicator status-scanning" id="scan-status"></span>
+                🔌 USB デバイス
+                <span class="status-indicator" id="scan-status"></span>
             </h1>
-            <p class="subtitle">ネットワーク接続デバイスの監視・管理</p>
+            <p class="subtitle">接続されているUSBデバイス一覧</p>
+        </div>
+
+        <!-- 情報バナー -->
+        <div class="info-banner">
+            <span>ℹ️</span>
+            <div>センサーやオーディオ機器などのUSBデバイスを表示します</div>
         </div>
 
         <!-- サマリーカード -->
         <div class="summary-card">
-            <div>ネットワーク接続状況</div>
-            <div class="summary-row">
-                <div class="summary-item">
-                    <div class="summary-number" id="total-devices">-</div>
-                    <div class="summary-label">総デバイス数</div>
-                </div>
-                <div class="summary-item">
-                    <div class="summary-number" id="online-devices">-</div>
-                    <div class="summary-label">オンライン</div>
-                </div>
-                <div class="summary-item">
-                    <div class="summary-number" id="device-types">-</div>
-                    <div class="summary-label">デバイスタイプ</div>
-                </div>
-            </div>
+            <div class="summary-number" id="total-devices">-</div>
+            <div class="summary-label">接続デバイス数</div>
         </div>
 
         <!-- アクションボタン -->
         <div class="actions">
-            <button class="btn" onclick="scanDevices()">
+            <button class="btn" onclick="scanUSBDevices()">
                 <span id="scan-icon">🔍</span>
                 <span id="scan-text">デバイススキャン</span>
             </button>
-            <button class="btn btn-secondary" onclick="refreshDevices()">
+            <button class="btn" onclick="refreshDevices()">
                 <span id="refresh-icon">🔄</span>
                 リフレッシュ
             </button>
-        </div>
-
-        <!-- フィルタリング -->
-        <div class="filter-section">
-            <div class="section-title">
-                🏷️ フィルタ
-            </div>
-            <div class="filter-buttons">
-                <button class="filter-btn active" onclick="filterDevices('all')">すべて</button>
-                <button class="filter-btn" onclick="filterDevices('online')">オンライン</button>
-                <button class="filter-btn" onclick="filterDevices('offline')">オフライン</button>
-                <button class="filter-btn" onclick="filterDevices('mobile')">モバイル</button>
-                <button class="filter-btn" onclick="filterDevices('computer')">PC</button>
-                <button class="filter-btn" onclick="filterDevices('iot')">IoT</button>
-            </div>
         </div>
 
         <!-- デバイス一覧 -->
@@ -425,10 +282,9 @@
                 <span id="device-count" style="font-size: 14px; color: #666;">(0台)</span>
             </div>
             <div id="devices-container">
-                <!-- デバイス一覧はJavaScriptで動的に生成 -->
                 <div class="empty-state">
-                    <div class="empty-state-icon">📱</div>
-                    <div>デバイスをスキャンしています...</div>
+                    <div class="empty-state-icon">🔌</div>
+                    <div>USBデバイスをスキャンしています...</div>
                     <div style="margin-top: 15px;">
                         <span class="loading"></span>
                     </div>
@@ -444,129 +300,51 @@
             <div>
                 <a href="/" class="nav-link">📊 ダッシュボード</a>
                 <a href="/network" class="nav-link">🌐 ネットワーク</a>
-                <a href="/network-monitor" class="nav-link">🖥️ 詳細監視</a>
+                <a href="/recording" class="nav-link">🎙️ 録音</a>
             </div>
         </div>
     </div>
 
     <script>
-        class DeviceManager {
+        class SimpleUSBDeviceManager {
             constructor() {
                 this.devices = [];
-                this.currentFilter = 'all';
                 this.isScanning = false;
                 this.init();
             }
 
             async init() {
-                console.log('Device Manager initializing...');
-                await this.loadDevices();
+                console.log('Simple USB Device Manager initializing...');
+                await this.loadUSBDevices();
                 this.startAutoRefresh();
             }
 
-            async loadDevices() {
+            async loadUSBDevices() {
                 if (this.isScanning) return;
 
                 try {
                     this.setStatus('scanning');
+                    this.isScanning = true;
                     
-                    // ネットワーク状態とデバイス情報を並列取得
-                    const [networkData, deviceData] = await Promise.allSettled([
-                        this.fetchNetworkStatus(),
-                        this.fetchDevices()
-                    ]);
+                    const response = await fetch('/api/device-scan');
+                    const data = await response.json();
 
-                    // デバイス情報を統合
-                    let devices = [];
-                    
-                    if (networkData.status === 'fulfilled' && networkData.value.connected_devices) {
-                        devices = networkData.value.connected_devices;
+                    if (response.ok && data.devices) {
+                        this.devices = data.devices;
+                        this.updateUI();
+                        
+                        document.getElementById('last-scan').textContent = 
+                            new Date().toLocaleTimeString('ja-JP');
+                    } else {
+                        throw new Error(data.error || 'デバイススキャンに失敗しました');
                     }
-
-                    if (deviceData.status === 'fulfilled' && deviceData.value.devices) {
-                        // 追加のデバイス情報があれば統合
-                        const additionalDevices = deviceData.value.devices.filter(device => 
-                            !devices.some(d => d.ip === device.ip)
-                        );
-                        devices = [...devices, ...additionalDevices];
-                    }
-
-                    // デバイス情報を拡張
-                    this.devices = devices.map(device => ({
-                        ...device,
-                        id: device.ip || `device-${Math.random().toString(36).substr(2, 9)}`,
-                        name: device.name || device.hostname || 'Unknown Device',
-                        type: this.guessDeviceType(device),
-                        status: device.status || (device.online !== false ? 'online' : 'offline'),
-                        last_seen: device.last_seen || new Date().toISOString(),
-                        mac: device.mac || 'Unknown',
-                        manufacturer: device.manufacturer || 'Unknown'
-                    }));
-
-                    this.updateUI();
-                    this.setStatus('online');
-                    
-                    document.getElementById('last-scan').textContent = 
-                        new Date().toLocaleTimeString('ja-JP');
 
                 } catch (error) {
-                    console.error('Device loading error:', error);
-                    this.setStatus('offline');
-                    this.showError('デバイス情報の取得に失敗しました');
+                    console.error('USB device loading error:', error);
+                    this.showError('USBデバイスの取得に失敗しました: ' + error.message);
                 } finally {
                     this.isScanning = false;
                 }
-            }
-
-            async fetchNetworkStatus() {
-                const response = await fetch('/api/network-status');
-                if (!response.ok) {
-                    throw new Error(`Network API error: ${response.status}`);
-                }
-                return await response.json();
-            }
-
-            async fetchDevices() {
-                const response = await fetch('/api/device-scan');
-                if (!response.ok) {
-                    throw new Error(`Device scan API error: ${response.status}`);
-                }
-                return await response.json();
-            }
-
-            guessDeviceType(device) {
-                const name = (device.name || '').toLowerCase();
-                const hostname = (device.hostname || '').toLowerCase();
-                const mac = (device.mac || '').toLowerCase();
-
-                // モバイルデバイス
-                if (name.includes('iphone') || name.includes('android') || 
-                    name.includes('mobile') || hostname.includes('phone')) {
-                    return 'mobile';
-                }
-
-                // PC・ラップトップ
-                if (name.includes('pc') || name.includes('laptop') || 
-                    name.includes('desktop') || hostname.includes('windows') ||
-                    hostname.includes('mac') || hostname.includes('linux')) {
-                    return 'computer';
-                }
-
-                // IoTデバイス
-                if (name.includes('iot') || name.includes('smart') || 
-                    name.includes('sensor') || name.includes('camera') ||
-                    name.includes('esp') || name.includes('arduino') ||
-                    name.includes('raspberry')) {
-                    return 'iot';
-                }
-
-                // ルーター・ネットワーク機器
-                if (name.includes('router') || name.includes('ap') || 
-                    name.includes('switch') || name.includes('gateway')) {
-                    return 'network';
-                }
-
-                return 'unknown';
             }
 
             updateUI() {
@@ -576,129 +354,51 @@
 
             updateSummary() {
                 const total = this.devices.length;
-                const online = this.devices.filter(d => d.status === 'online').length;
-                const types = new Set(this.devices.map(d => d.type)).size;
-
                 document.getElementById('total-devices').textContent = total;
-                document.getElementById('online-devices').textContent = online;
-                document.getElementById('device-types').textContent = types;
             }
 
             renderDevices() {
                 const container = document.getElementById('devices-container');
-                const filteredDevices = this.getFilteredDevices();
 
-                if (filteredDevices.length === 0) {
+                if (this.devices.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <div class="empty-state-icon">📱</div>
-                            <div>
-                                ${this.currentFilter === 'all' ? 
-                                    'デバイスが見つかりませんでした' : 
-                                    `${this.getFilterLabel(this.currentFilter)}デバイスが見つかりませんでした`
-                                }
-                            </div>
+                            <div class="empty-state-icon">🔌</div>
+                            <div>USBデバイスが見つかりませんでした</div>
                         </div>
                     `;
                     document.getElementById('device-count').textContent = '(0台)';
                     return;
                 }
 
-                document.getElementById('device-count').textContent = `(${filteredDevices.length}台)`;
+                document.getElementById('device-count').textContent = `(${this.devices.length}台)`;
 
-                container.innerHTML = filteredDevices.map(device => `
-                    <div class="device-card ${device.status}" data-type="${device.type}">
-                        <div class="device-header">
-                            <div class="device-name">
-                                ${this.getDeviceIcon(device.type)} ${device.name}
-                            </div>
-                            <div class="device-status ${device.status}">
-                                ${device.status === 'online' ? 'オンライン' : 
-                                  device.status === 'offline' ? 'オフライン' : '不明'}
-                            </div>
-                        </div>
-                        <div class="device-info">
-                            <div class="device-info-item">
-                                <span class="device-info-label">IPアドレス</span>
-                                <span class="device-info-value">${device.ip || '-'}</span>
-                            </div>
-                            <div class="device-info-item">
-                                <span class="device-info-label">MACアドレス</span>
-                                <span class="device-info-value">${device.mac || '-'}</span>
-                            </div>
-                            <div class="device-info-item">
-                                <span class="device-info-label">デバイスタイプ</span>
-                                <span class="device-info-value">${this.getTypeLabel(device.type)}</span>
-                            </div>
-                            <div class="device-info-item">
-                                <span class="device-info-label">製造元</span>
-                                <span class="device-info-value">${device.manufacturer || '-'}</span>
-                            </div>
-                            <div class="device-info-item">
-                                <span class="device-info-label">最終確認</span>
-                                <span class="device-info-value">
-                                    ${device.last_seen ? 
-                                        new Date(device.last_seen).toLocaleString('ja-JP') : '-'}
-                                </span>
-                            </div>
-                            <div class="device-info-item">
-                                <span class="device-info-label">ホスト名</span>
-                                <span class="device-info-value">${device.hostname || '-'}</span>
-                            </div>
-                        </div>
+                container.innerHTML = this.devices.map(device => `
+                    <div class="device-item">
+                        <div class="device-icon">${this.getDeviceIcon(device.type)}</div>
+                        <div class="device-name">${device.name}</div>
                     </div>
                 `).join('');
             }
 
-            getFilteredDevices() {
-                if (this.currentFilter === 'all') {
-                    return this.devices;
-                }
-                return this.devices.filter(device => {
-                    if (this.currentFilter === 'online' || this.currentFilter === 'offline') {
-                        return device.status === this.currentFilter;
-                    }
-                    return device.type === this.currentFilter;
-                });
-            }
-
             getDeviceIcon(type) {
                 const icons = {
-                    mobile: '📱',
-                    computer: '💻',
-                    iot: '🔧',
-                    network: '🌐',
-                    unknown: '❓'
+                    'オーディオ': '🎵',
+                    'カメラ': '📷',
+                    'ストレージ': '💾',
+                    '入力デバイス': '⌨️',
+                    'ネットワーク': '🌐',
+                    'シリアル通信': '📡',
+                    'GPS': '🛰️',
+                    '印刷機器': '🖨️',
+                    'その他': '🔧'
                 };
-                return icons[type] || '❓';
-            }
-
-            getTypeLabel(type) {
-                const labels = {
-                    mobile: 'モバイル',
-                    computer: 'コンピュータ',
-                    iot: 'IoTデバイス',
-                    network: 'ネットワーク機器',
-                    unknown: '不明'
-                };
-                return labels[type] || '不明';
-            }
-
-            getFilterLabel(filter) {
-                const labels = {
-                    online: 'オンライン',
-                    offline: 'オフライン',
-                    mobile: 'モバイル',
-                    computer: 'コンピュータ',
-                    iot: 'IoT',
-                    network: 'ネットワーク機器'
-                };
-                return labels[filter] || '';
+                return icons[type] || '🔌';
             }
 
             setStatus(status) {
                 const indicator = document.getElementById('scan-status');
-                indicator.className = `status-indicator status-${status}`;
+                indicator.style.background = status === 'scanning' ? '#FF9800' : '#4CAF50';
             }
 
             showError(message) {
@@ -714,16 +414,16 @@
             startAutoRefresh() {
                 setInterval(() => {
                     if (!this.isScanning) {
-                        this.loadDevices();
+                        this.loadUSBDevices();
                     }
                 }, 30000); // 30秒ごと
             }
         }
 
         // グローバル関数
-        let deviceManager;
+        let usbDeviceManager;
 
-        async function scanDevices() {
+        async function scanUSBDevices() {
             const button = document.querySelector('.btn');
             const icon = document.getElementById('scan-icon');
             const text = document.getElementById('scan-text');
@@ -733,7 +433,7 @@
             text.textContent = 'スキャン中...';
             
             try {
-                await deviceManager.loadDevices();
+                await usbDeviceManager.loadUSBDevices();
             } finally {
                 setTimeout(() => {
                     button.disabled = false;
@@ -751,7 +451,7 @@
             icon.innerHTML = '<span class="loading"></span>';
             
             try {
-                await deviceManager.loadDevices();
+                await usbDeviceManager.loadUSBDevices();
             } finally {
                 setTimeout(() => {
                     button.disabled = false;
@@ -760,21 +460,9 @@
             }
         }
 
-        function filterDevices(filter) {
-            // フィルターボタンの状態更新
-            document.querySelectorAll('.filter-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            event.target.classList.add('active');
-
-            // フィルター適用
-            deviceManager.currentFilter = filter;
-            deviceManager.renderDevices();
-        }
-
         // 初期化
         document.addEventListener('DOMContentLoaded', () => {
-            deviceManager = new DeviceManager();
+            usbDeviceManager = new SimpleUSBDeviceManager();
         });
     </script>
 </body>

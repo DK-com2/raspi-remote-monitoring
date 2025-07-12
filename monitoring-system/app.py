@@ -147,99 +147,113 @@ def api_speed_test():
         'timestamp': datetime.now().strftime('%H:%M:%S')
     })
 
-@app.route('/api/signal-strength')
-def api_signal_strength():
-    """オンデマンド信号強度取得（接続タイプ別）"""
-    try:
-        signal_data = network_monitor.get_signal_strength()
-        return jsonify({
-            **signal_data,
-            'status': 'success' if signal_data['signal_percent'] > 0 else 'no_signal',
-            'timestamp': datetime.now().strftime('%H:%M:%S')
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'connection_type': 'unknown',
-            'signal_percent': 0,
-            'signal_quality': 'error',
-            'status': 'error',
-            'error': str(e),
-            'timestamp': datetime.now().strftime('%H:%M:%S')
-        }), 500
-
-@app.route('/api/dns-info')
-def api_dns_info():
-    """オンデマンドDNS情報取得"""
-    try:
-        dns_server = network_monitor.get_dns_server()
-        return jsonify({
-            'dns_server': dns_server,
-            'status': 'success' if dns_server else 'no_dns',
-            'timestamp': datetime.now().strftime('%H:%M:%S')
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'dns_server': None,
-            'status': 'error',
-            'error': str(e),
-            'timestamp': datetime.now().strftime('%H:%M:%S')
-        }), 500
-
-@app.route('/api/device-scan')
-def api_device_scan():
-    """USB デバイススキャン"""
-    try:
-        from modules.network.devices import DeviceDetector
-        
-        # USBデバイスをスキャン
-        detector = DeviceDetector()
-        devices = detector.scan_all_devices()
-        
-        return jsonify({
-            'devices': devices,
-            'count': len(devices),
-            'timestamp': datetime.now().strftime('%H:%M:%S'),
-            'status': 'success' if devices else 'no_devices_found'
-        })
-        
-    except Exception as e:
-        print(f"USB device scan error: {e}")
-        return jsonify({
-            'devices': [],
-            'count': 0,
-            'timestamp': datetime.now().strftime('%H:%M:%S'),
-            'status': 'error',
-            'error': str(e)
-        }), 500
+# 信号強度、DNS情報、デバイススキャンのAPIエンドポイントは削除
+# シンプルなネットワークテストページではこれらの機能は不要
 
 @app.route('/api/crontab-status')
 def api_crontab_status():
-    """クロンタブ状態確認API"""
+    """クロンタブ状態確認API（改良版）"""
     try:
         import subprocess
-        # crontab コマンドで現在のジョブ一覧を取得
-        result = subprocess.run(['crontab', '-l'], capture_output=True, text=True, timeout=10)
+        import os
         
-        if result.returncode == 0:
-            cron_lines = [line.strip() for line in result.stdout.split('\n') if line.strip() and not line.startswith('#')]
-            active_jobs = len(cron_lines)
-            
-            return jsonify({
-                'status': 'active' if active_jobs > 0 else 'inactive',
-                'active_jobs': active_jobs,
-                'jobs': cron_lines[:5],  # 最初の5個のジョブを表示
-                'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'message': f'{active_jobs}個のアクティブジョブ' if active_jobs > 0 else 'アクティブなジョブなし'
-            })
-        else:
+        # デバッグ情報
+        debug_info = {
+            'user': os.getenv('USER', 'unknown'),
+            'uid': os.getuid(),
+            'crontab_path': None
+        }
+        
+        # crontabコマンドの存在確認
+        which_result = subprocess.run(['which', 'crontab'], capture_output=True, text=True, timeout=5)
+        if which_result.returncode != 0:
             return jsonify({
                 'status': 'error',
                 'active_jobs': 0,
                 'jobs': [],
                 'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'message': 'crontabコマンドの実行に失敗しました'
+                'message': 'crontabコマンドが見つかりません',
+                'debug': debug_info
+            })
+        
+        debug_info['crontab_path'] = which_result.stdout.strip()
+        
+        # crontab -l コマンドで現在のジョブ一覧を取得
+        result = subprocess.run(['crontab', '-l'], capture_output=True, text=True, timeout=10)
+        
+        debug_info.update({
+            'return_code': result.returncode,
+            'stdout_length': len(result.stdout),
+            'stderr': result.stderr.strip()
+        })
+        
+        if result.returncode == 0:
+            # 成功時の処理
+            all_lines = result.stdout.split('\n')
+            cron_lines = []
+            invalid_lines = []
+            
+            for line in all_lines:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue  # 空行やコメントをスキップ
+                
+                # cron文法の簡易チェック（フィールド数確認）
+                fields = line.split()
+                if len(fields) >= 6:  # 最低6フィールド必要
+                    cron_lines.append(line)
+                else:
+                    invalid_lines.append(line)
+            
+            active_jobs = len(cron_lines)
+            message = f'{active_jobs}個のアクティブジョブ'
+            
+            if invalid_lines:
+                message += f' (警告: {len(invalid_lines)}個の無効な行があります)'
+            
+            if active_jobs == 0 and not invalid_lines:
+                message = 'アクティブなジョブなし'
+            
+            debug_info.update({
+                'total_lines': len(all_lines),
+                'valid_jobs': active_jobs,
+                'invalid_lines': invalid_lines[:3] if invalid_lines else []
+            })
+            
+            return jsonify({
+                'status': 'active' if active_jobs > 0 else ('warning' if invalid_lines else 'inactive'),
+                'active_jobs': active_jobs,
+                'jobs': cron_lines[:5],  # 最初の5個のジョブを表示
+                'invalid_jobs': invalid_lines[:3],  # 無効な行を最大3個表示
+                'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': message,
+                'debug': debug_info
+            })
+        else:
+            # エラー時の詳細処理
+            error_message = 'crontabコマンドの実行に失敗しました'
+            
+            # よくあるエラーパターンの判定
+            stderr_lower = result.stderr.lower()
+            if 'no crontab' in stderr_lower:
+                error_message = 'このユーザーにはcrontabが設定されていません（正常状態）'
+                status = 'inactive'
+            elif 'permission denied' in stderr_lower:
+                error_message = 'crontabへのアクセス権限がありません'
+                status = 'permission_error'
+            elif 'command not found' in stderr_lower:
+                error_message = 'crontabコマンドがインストールされていません'
+                status = 'not_installed'
+            else:
+                status = 'error'
+            
+            return jsonify({
+                'status': status,
+                'active_jobs': 0,
+                'jobs': [],
+                'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': error_message,
+                'debug': debug_info
             })
             
     except subprocess.TimeoutExpired:
@@ -249,6 +263,14 @@ def api_crontab_status():
             'jobs': [],
             'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'message': 'crontabコマンドがタイムアウトしました'
+        })
+    except FileNotFoundError:
+        return jsonify({
+            'status': 'not_found',
+            'active_jobs': 0,
+            'jobs': [],
+            'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'message': 'crontabコマンドが見つかりません'
         })
     except Exception as e:
         return jsonify({
@@ -688,14 +710,15 @@ if __name__ == '__main__':
     # アクセス情報表示
     print("🌐 アクセス情報:")
     print(f"  - メインページ（ダッシュボード）: http://localhost:{settings.app['port']}/")
-    print(f"  - 詳細監視: http://localhost:{settings.app['port']}/network-monitor")
+    print(f"  - ネットワークテスト: http://localhost:{settings.app['port']}/network")
     print(f"  - 録音機能: http://localhost:{settings.app['port']}/recording")
+    if gdrive_manager:
+        print(f"  - Google Drive: http://localhost:{settings.app['port']}/gdrive")
+    print("📝 その他の管理ページ:")
+    print(f"  - 詳細監視（レガシー）: http://localhost:{settings.app['port']}/network-monitor")
     print(f"  - Tailscale管理: http://localhost:{settings.app['port']}/tailscale")
     print(f"  - Crontab管理: http://localhost:{settings.app['port']}/crontab")
     print(f"  - デバイス管理: http://localhost:{settings.app['port']}/devices")
-    print(f"  - ネットワーク詳細: http://localhost:{settings.app['port']}/network")
-    if gdrive_manager:
-        print(f"  - Google Drive: http://localhost:{settings.app['port']}/gdrive")
     print("=" * 50)
     
     # Flaskアプリ開始
