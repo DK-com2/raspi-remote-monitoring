@@ -98,7 +98,7 @@ log_info "🐍 Python仮想環境確認..."
 source "$VENV_DIR/bin/activate"
 
 # 必要なパッケージ確認
-REQUIRED_PACKAGES=("flask" "psutil" "requests" "pyyaml")
+REQUIRED_PACKAGES=("flask" "psutil" "requests" "yaml")
 for package in "${REQUIRED_PACKAGES[@]}"; do
     if ! python -c "import $package" 2>/dev/null; then
         log_error "必要なパッケージが見つかりません: $package"
