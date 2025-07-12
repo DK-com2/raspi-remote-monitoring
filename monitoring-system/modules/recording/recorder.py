@@ -13,8 +13,8 @@ from typing import Dict, List, Any, Optional, Tuple
 class AudioRecorder:
     """音声録音クラス"""
     
-    def __init__(self, save_directory: str = '../data/recordings'):
-        self.save_directory = save_directory
+    def __init__(self, save_directory: str):
+        self.save_directory = os.path.abspath(save_directory)
         self.data = {
             'is_recording': False,
             'start_time': None,
@@ -30,6 +30,7 @@ class AudioRecorder:
         
         # 録音ディレクトリ作成
         os.makedirs(self.save_directory, exist_ok=True)
+        print(f"📁 録音保存ディレクトリ: {self.save_directory}")
     
     def get_audio_devices(self) -> List[Dict[str, Any]]:
         """利用可能な録音デバイスの一覧を取得"""
@@ -43,8 +44,12 @@ class AudioRecorder:
             
             # ALSA録音デバイスの検出
             try:
+                print("🔍 Detecting ALSA audio devices...")
                 result = subprocess.run(['arecord', '-l'], capture_output=True, text=True, timeout=5)
+                print(f"arecord -l result: {result.returncode}")
+                
                 if result.returncode == 0:
+                    print(f"arecord output: {result.stdout}")
                     lines = result.stdout.split('\n')
                     for line in lines:
                         import re
@@ -55,17 +60,22 @@ class AudioRecorder:
                         
                         if match:
                             card_num, card_name, card_desc, device_num, device_name, device_desc = match.groups()
-                            devices.append({
+                            device_info = {
                                 'id': f'hw:{card_num},{device_num}',
                                 'name': f'{device_desc.strip()}',
                                 'card': f'Card {card_num}',
                                 'device': f'Device {device_num}',
                                 'type': 'ALSA',
                                 'description': f'{card_desc.strip()}'
-                            })
+                            }
+                            devices.append(device_info)
+                            print(f"Found device: {device_info}")
+                else:
+                    print(f"arecord error: {result.stderr}")
             except Exception as e:
                 print(f"ALSA device detection error: {e}")
             
+            print(f"🎤 Found {len(devices)} audio devices")
             return devices
             
         except Exception as e:
@@ -93,16 +103,12 @@ class AudioRecorder:
                 'arecord',
                 '-D', device_id,
                 '-d', str(duration),
-                '-f', 'cd',  # CD品質 (16bit, 44.1kHz, ステレオ)
+                '-r', str(sample_rate),
+                '-c', str(channels),
+                '-f', 'S16_LE',  # 16bit signed little endian
                 '-t', 'wav',
                 filepath
             ]
-            
-            # カスタム設定がある場合
-            if sample_rate != 44100:
-                cmd.extend(['-r', str(sample_rate)])
-            if channels == 1:
-                cmd.extend(['-c', '1'])  # モノラル
             
             print(f"Starting recording with command: {' '.join(cmd)}")
             

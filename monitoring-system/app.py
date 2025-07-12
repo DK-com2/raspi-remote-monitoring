@@ -427,6 +427,95 @@ def api_recording_devices():
         'timestamp': datetime.now().strftime('%H:%M:%S')
     })
 
+@app.route('/api/recording/start', methods=['POST'])
+def api_recording_start():
+    """録音開始API"""
+    try:
+        data = request.get_json()
+        
+        duration = data.get('duration', 10)
+        device_id = data.get('device_id', 'default')
+        sample_rate = data.get('sample_rate', 44100)
+        channels = data.get('channels', 2)
+        
+        result = audio_recorder.start_recording(
+            duration=duration,
+            device_id=device_id,
+            sample_rate=sample_rate,
+            channels=channels
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'録音開始エラー: {str(e)}'
+        }), 500
+
+@app.route('/api/recording/stop', methods=['POST'])
+def api_recording_stop():
+    """録音停止API"""
+    try:
+        result = audio_recorder.stop_recording()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'録音停止エラー: {str(e)}'
+        }), 500
+
+@app.route('/api/recording/status')
+def api_recording_status():
+    """録音状態取得API"""
+    try:
+        status = audio_recorder.get_status()
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({
+            'error': f'状態取得エラー: {str(e)}',
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        }), 500
+
+@app.route('/api/recording/list')
+def api_recording_list():
+    """録音ファイル一覧API"""
+    try:
+        files = audio_recorder.list_recordings()
+        return jsonify({
+            'files': files,
+            'count': len(files),
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        })
+    except Exception as e:
+        return jsonify({
+            'error': f'ファイル一覧取得エラー: {str(e)}',
+            'files': [],
+            'count': 0,
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        }), 500
+
+@app.route('/api/recording/download/<filename>')
+def api_recording_download(filename):
+    """録音ファイルダウンロードAPI"""
+    try:
+        filepath = audio_recorder.get_file_path(filename)
+        if filepath and os.path.exists(filepath):
+            return send_file(
+                filepath,
+                as_attachment=True,
+                download_name=filename,
+                mimetype='audio/wav'
+            )
+        else:
+            return jsonify({
+                'error': 'ファイルが見つかりません'
+            }), 404
+    except Exception as e:
+        return jsonify({
+            'error': f'ダウンロードエラー: {str(e)}'
+        }), 500
+
 # ========================================
 # Google Drive API
 # ========================================
