@@ -147,17 +147,72 @@ def api_speed_test():
         'timestamp': datetime.now().strftime('%H:%M:%S')
     })
 
+@app.route('/api/signal-strength')
+def api_signal_strength():
+    """オンデマンド信号強度取得（接続タイプ別）"""
+    try:
+        signal_data = network_monitor.get_signal_strength()
+        return jsonify({
+            **signal_data,
+            'status': 'success' if signal_data['signal_percent'] > 0 else 'no_signal',
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'connection_type': 'unknown',
+            'signal_percent': 0,
+            'signal_quality': 'error',
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        }), 500
+
+@app.route('/api/dns-info')
+def api_dns_info():
+    """オンデマンドDNS情報取得"""
+    try:
+        dns_server = network_monitor.get_dns_server()
+        return jsonify({
+            'dns_server': dns_server,
+            'status': 'success' if dns_server else 'no_dns',
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'dns_server': None,
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        }), 500
+
 @app.route('/api/device-scan')
 def api_device_scan():
-    """オンデマンド機器スキャン"""
-    # デバイス検出機能は将来実装
-    devices = []
-    return jsonify({
-        'devices': devices,
-        'count': len(devices),
-        'timestamp': datetime.now().strftime('%H:%M:%S'),
-        'status': 'success' if devices else 'no_devices_found'
-    })
+    """USB デバイススキャン"""
+    try:
+        from modules.network.devices import DeviceDetector
+        
+        # USBデバイスをスキャン
+        detector = DeviceDetector()
+        devices = detector.scan_all_devices()
+        
+        return jsonify({
+            'devices': devices,
+            'count': len(devices),
+            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'status': 'success' if devices else 'no_devices_found'
+        })
+        
+    except Exception as e:
+        print(f"USB device scan error: {e}")
+        return jsonify({
+            'devices': [],
+            'count': 0,
+            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'status': 'error',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/crontab-status')
 def api_crontab_status():

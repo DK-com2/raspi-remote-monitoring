@@ -433,6 +433,7 @@
                 <div class="connection-item">
                     <div class="connection-value" id="signal-strength">-</div>
                     <div class="connection-label">信号強度</div>
+                    <div id="signal-details"></div>
                 </div>
                 <div class="connection-item">
                     <div class="connection-value" id="ping-latency">-</div>
@@ -483,13 +484,13 @@
             
             <div class="metric-card">
                 <div class="metric-header">
-                    <div class="metric-title">📶 WiFi信号強度</div>
-                    <div class="metric-value" id="wifi-signal-value">-</div>
+                    <div class="metric-title" id="signal-metric-title">📶 信号強度</div>
+                    <div class="metric-value" id="signal-value">-</div>
                 </div>
-                <div class="metric-chart" id="wifi-signal-chart"></div>
+                <div class="metric-chart" id="signal-chart"></div>
                 <div class="metric-info">
-                    <span>最低: <span id="wifi-min">-</span></span>
-                    <span>最高: <span id="wifi-max">-</span></span>
+                    <span>最低: <span id="signal-min">-</span></span>
+                    <span>最高: <span id="signal-max">-</span></span>
                 </div>
             </div>
 
@@ -503,16 +504,6 @@
                     <span>平均: <span id="latency-avg">-</span></span>
                     <span>最大: <span id="latency-max">-</span></span>
                 </div>
-            </div>
-        </div>
-
-        <!-- ネットワークインターフェース -->
-        <div class="interface-section">
-            <div class="section-title">
-                🔌 ネットワークインターフェース
-            </div>
-            <div id="interfaces-container">
-                <!-- インターフェース情報はJavaScriptで動的に生成 -->
             </div>
         </div>
 
@@ -534,7 +525,7 @@
             constructor() {
                 this.isTestRunning = false;
                 this.metrics = {
-                    wifi: [],
+                    signal: [],
                     latency: []
                 };
                 this.init();
@@ -551,7 +542,6 @@
                     const networkData = await this.fetchNetworkStatus();
                     this.updateConnectionUI(networkData);
                     this.updateMetricsUI(networkData);
-                    this.updateInterfacesUI(networkData);
                     
                     document.getElementById('last-update').textContent = 
                         new Date().toLocaleTimeString('ja-JP');
@@ -570,31 +560,62 @@
                 return await response.json();
             }
 
-            updateConnectionUI(data) {
+            updateConnectionUI(networkData) {
                 // 接続状態
-                const isConnected = data.connection_status === 'connected';
+                const isConnected = networkData.connection_status === 'connected';
                 const statusIndicator = document.getElementById('network-status');
                 statusIndicator.className = `status-indicator ${isConnected ? 'status-online' : 'status-offline'}`;
                 
                 document.getElementById('connection-status').textContent = 
                     isConnected ? 'インターネット接続正常' : '接続に問題があります';
 
-                // 信号強度
-                const signalStrength = data.signal_strength_percent || 0;
+                // 信号強度 - WiFi接続時のみ表示
+                const signalStrength = this.getWiFiSignalStrength(networkData);
                 this.updateSignalStrength(signalStrength);
 
                 // 応答時間
-                const latency = data.ping_latency || '-';
+                const latency = networkData.ping_latency || '-';
                 document.getElementById('ping-latency').textContent = 
                     latency !== '-' ? `${latency}ms` : '-';
 
                 // IPアドレス
                 document.getElementById('current-ip').textContent = 
-                    data.current_ip || '-';
+                    this.getCurrentIP(networkData) || '-';
 
                 // DNSサーバー
                 document.getElementById('dns-server').textContent = 
-                    data.dns_server || '-';
+                    this.getDNSServer() || '-';
+            }
+            
+            getCurrentIP(data) {
+                // プライマリインターフェースのIPアドレスを取得
+                if (data.network_interfaces && data.network_interfaces.length > 0) {
+                    const primaryInterface = data.network_interfaces.find(iface => 
+                        iface.name === data.primary_interface
+                    );
+                    if (primaryInterface && primaryInterface.ip_addresses) {
+                        const ipv4 = primaryInterface.ip_addresses.find(addr => 
+                            addr.family === 'AF_INET'
+                        );
+                        return ipv4 ? ipv4.address : null;
+                    }
+                }
+                return null;
+            }
+            
+            async updateDNSServer() {
+                try {
+                    const response = await fetch('/api/dns-info');
+                    if (response.ok) {
+                        const data = await response.json();
+                        document.getElementById('dns-server').textContent = data.dns_server || '-';
+                    } else {
+                        document.getElementById('dns-server').textContent = '-';
+                    }
+                } catch (error) {
+                    console.error('DNS info fetch error:', error);
+                    document.getElementById('dns-server').textContent = '-';
+                }
             }
 
             updateSignalStrength(strength) {
@@ -623,18 +644,8 @@
             }
 
             updateMetricsUI(data) {
-                // WiFi信号強度のメトリクス
-                const wifiSignal = data.signal_strength_percent || 0;
-                this.metrics.wifi.push(wifiSignal);
-                if (this.metrics.wifi.length > 20) {
-                    this.metrics.wifi.shift();
-                }
-
-                document.getElementById('wifi-signal-value').textContent = `${wifiSignal}%`;
-                document.getElementById('wifi-min').textContent = 
-                    `${Math.min(...this.metrics.wifi)}%`;
-                document.getElementById('wifi-max').textContent = 
-                    `${Math.max(...this.metrics.wifi)}%`;
+                // 信号強度メトリクスの更新
+                this.updateSignalMetrics();
 
                 // 応答時間のメトリクス
                 const latency = data.ping_latency || 0;
@@ -651,68 +662,29 @@
                         `${Math.max(...this.metrics.latency)}ms`;
                 }
             }
-
-            updateInterfacesUI(data) {
-                const container = document.getElementById('interfaces-container');
-                const interfaces = data.network_interfaces || [];
-
-                if (interfaces.length === 0) {
-                    container.innerHTML = `
-                        <div style="text-align: center; padding: 20px; color: #666;">
-                            ネットワークインターフェース情報が取得できませんでした
-                        </div>
-                    `;
-                    return;
+            
+            async updateSignalMetrics() {
+                try {
+                    const response = await fetch('/api/signal-strength');
+                    if (response.ok) {
+                        const signalData = await response.json();
+                        const signalPercent = signalData.signal_percent || 0;
+                        
+                        // メトリクス更新
+                        this.metrics.signal = this.metrics.signal || [];
+                        this.metrics.signal.push(signalPercent);
+                        if (this.metrics.signal.length > 20) {
+                            this.metrics.signal.shift();
+                        }
+                        
+                        // 表示更新
+                        document.getElementById('signal-value').textContent = `${signalPercent}%`;
+                        document.getElementById('signal-min').textContent = `${Math.min(...this.metrics.signal)}%`;
+                        document.getElementById('signal-max').textContent = `${Math.max(...this.metrics.signal)}%`;
+                    }
+                } catch (error) {
+                    console.error('Signal metrics update error:', error);
                 }
-
-                container.innerHTML = interfaces.map(iface => `
-                    <div class="interface-card">
-                        <div class="interface-header">
-                            <div class="interface-name">
-                                ${this.getInterfaceIcon(iface.type)} ${iface.name}
-                            </div>
-                            <div class="interface-status ${iface.status === 'up' ? 'up' : 'down'}">
-                                ${iface.status === 'up' ? 'アクティブ' : '無効'}
-                            </div>
-                        </div>
-                        <div class="interface-details">
-                            <div class="interface-detail">
-                                <div class="interface-label">IPアドレス</div>
-                                <div class="interface-value">${iface.ip || '-'}</div>
-                            </div>
-                            <div class="interface-detail">
-                                <div class="interface-label">MACアドレス</div>
-                                <div class="interface-value">${iface.mac || '-'}</div>
-                            </div>
-                            <div class="interface-detail">
-                                <div class="interface-label">送信バイト</div>
-                                <div class="interface-value">${this.formatBytes(iface.tx_bytes || 0)}</div>
-                            </div>
-                            <div class="interface-detail">
-                                <div class="interface-label">受信バイト</div>
-                                <div class="interface-value">${this.formatBytes(iface.rx_bytes || 0)}</div>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-            }
-
-            getInterfaceIcon(type) {
-                const icons = {
-                    wifi: '📶',
-                    ethernet: '🌐',
-                    loopback: '🔄',
-                    vpn: '🔒'
-                };
-                return icons[type] || '🔌';
-            }
-
-            formatBytes(bytes) {
-                if (bytes === 0) return '0 B';
-                const k = 1024;
-                const sizes = ['B', 'KB', 'MB', 'GB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
             }
 
             showError() {
