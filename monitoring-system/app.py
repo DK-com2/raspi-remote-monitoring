@@ -44,7 +44,7 @@ try:
     # Google Drive用の設定を絶対パスで作成
     gdrive_config = {
         'gdrive': {
-            'folder_name': 'raspi-monitoring',
+            'folder_name': os.getenv('GDRIVE_FOLDER_NAME', 'RaspberryPi-Records'),  # 環境変数でカスタマイズ可能
             'credentials_file': str(data_dir / "credentials" / "credentials.json"),
             'token_file': str(data_dir / "credentials" / "token.json")
         }

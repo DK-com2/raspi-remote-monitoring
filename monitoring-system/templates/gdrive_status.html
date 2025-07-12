@@ -371,7 +371,11 @@
             </div>
             <div class="status-row">
                 <span class="status-label">フォルダ名</span>
-                <span class="status-value" id="folder-name">raspi-monitoring</span>
+                <span class="status-value" id="folder-name" 
+                      style="cursor: pointer; text-decoration: underline;" 
+                      onclick="changeFolderName()">
+                    RaspberryPi-Records
+                </span>
             </div>
         </div>
 
@@ -760,6 +764,16 @@
 
         function authenticateGDrive() {
             alert('Google Drive認証機能は開発中です。\n\n現在の認証方法:\n1. credentials.jsonをdata/credentials/に配置\n2. アプリ再起動で自動認証\n3. ブラウザで認証画面が開きます');
+        }
+
+        function changeFolderName() {
+            const currentName = document.getElementById('folder-name').textContent.trim();
+            const newName = prompt('新しいGoogle Driveフォルダ名を入力してください:', currentName);
+            
+            if (newName && newName !== currentName && newName.trim() !== '') {
+                // 実際のフォルダ名変更処理は将来実装
+                alert('フォルダ名変更機能は開発中です。\n\n現在の方法:\n1. app.pyの"folder_name"設定を変更\n2. アプリを再起動\n\n希望フォルダ名: "' + newName + '"');
+            }
         }
 
         function uploadSpecificFile(filename) {
