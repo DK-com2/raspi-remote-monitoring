@@ -3,252 +3,647 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Google Drive 接続状態</title>
+    <title>Google Drive管理 - Raspberry Pi</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background-color: white;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            color: #333;
         }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 25px;
+            padding: 30px 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
         .header {
             text-align: center;
             margin-bottom: 30px;
         }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            color: #fdcb6e;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-connected {
+            background: #4CAF50;
+        }
+
+        .status-disconnected {
+            background: #f44336;
+        }
+
+        .status-warning {
+            background: #FF9800;
+        }
+
+        .status-error {
+            background: #f44336;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
         .status-card {
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 20px;
-            margin: 15px 0;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            font-size: 15px;
+        }
+
+        .status-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .status-label {
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .status-value {
+            font-weight: 600;
+            color: #1d1d1f;
+        }
+
+        .status-value.connected {
+            color: #28a745;
+        }
+
+        .status-value.error {
+            color: #dc3545;
+        }
+
+        .status-value.warning {
+            color: #fd7e14;
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(253, 203, 110, 0.1);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fdcb6e;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .upload-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            border-left: 4px solid #fdcb6e;
             transition: all 0.3s ease;
         }
-        .status-connected {
-            background-color: #d4edda;
-            border-color: #c3e6cb;
+
+        .upload-item:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
         }
-        .status-error {
-            background-color: #f8d7da;
-            border-color: #f5c6cb;
+
+        .upload-info {
+            flex: 1;
         }
-        .status-warning {
-            background-color: #fff3cd;
-            border-color: #ffeaa7;
-        }
-        .status-info {
-            background-color: #d1ecf1;
-            border-color: #bee5eb;
-        }
-        .button {
-            background-color: #007bff;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            margin: 5px;
-            text-decoration: none;
-            display: inline-block;
-            transition: background-color 0.3s;
-        }
-        .button:hover {
-            background-color: #0056b3;
-        }
-        .button-secondary {
-            background-color: #6c757d;
-        }
-        .button-secondary:hover {
-            background-color: #545b62;
-        }
-        .button-success {
-            background-color: #28a745;
-        }
-        .button-success:hover {
-            background-color: #1e7e34;
-        }
-        .actions {
-            text-align: center;
-            margin: 30px 0;
-        }
-        .info-grid {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            gap: 10px;
-            margin: 15px 0;
-        }
-        .info-label {
-            font-weight: bold;
+
+        .upload-name {
+            font-weight: 600;
             color: #495057;
+            margin-bottom: 4px;
         }
-        .status-icon {
-            font-size: 1.5em;
-            margin-right: 10px;
-        }
-        .loading {
-            text-align: center;
+
+        .upload-details {
+            font-size: 13px;
             color: #6c757d;
         }
-        @media (max-width: 600px) {
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .btn {
+            padding: 14px 20px;
+            border: none;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #fdcb6e 0%, #e17055 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(253, 203, 110, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(253, 203, 110, 0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(108, 117, 125, 0.3);
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(108, 117, 125, 0.4);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #155724 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(253, 203, 110, 0.2);
+        }
+
+        .nav-links {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .nav-link {
+            color: #6c757d;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 15px;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover {
+            background: rgba(253, 203, 110, 0.1);
+            color: #fdcb6e;
+        }
+
+        .last-update {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 15px;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .setup-steps {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .setup-steps ol {
+            padding-left: 20px;
+        }
+
+        .setup-steps li {
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .setup-steps code {
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #e83e8c;
+        }
+
+        /* レスポンシブ対応 */
+        @media (max-width: 480px) {
             .container {
                 margin: 10px;
-                padding: 15px;
+                padding: 20px 15px;
             }
-            .info-grid {
+
+            .action-buttons {
                 grid-template-columns: 1fr;
+            }
+
+            .nav-links {
+                flex-direction: column;
+                align-items: center;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- ヘッダー -->
         <div class="header">
-            <h1>🗂️ Google Drive 連携状態</h1>
-            <p>Google Drive接続確認とテスト送信機能</p>
+            <h1>
+                ☁️ Google Drive管理
+                <span class="status-indicator status-warning" id="main-status"></span>
+            </h1>
+            <p>クラウドストレージ連携状態</p>
         </div>
 
-        <div id="gdrive-status" class="status-card loading">
-            <h3>📡 接続状態確認中...</h3>
-            <p>Google Drive接続状態を確認しています。しばらくお待ちください。</p>
+        <!-- ステータスカード -->
+        <div class="status-card">
+            <div class="status-row">
+                <span class="status-label">接続状態</span>
+                <span class="status-value warning" id="connection-status">確認中...</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">ユーザーアカウント</span>
+                <span class="status-value" id="user-email">-</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">最終アップロード</span>
+                <span class="status-value" id="last-upload">-</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">フォルダ名</span>
+                <span class="status-value" id="folder-name">raspi-monitoring</span>
+            </div>
         </div>
 
-        <div id="upload-history" class="status-card" style="display: none;">
-            <h3>📤 最新アップロード</h3>
+        <!-- アラート表示エリア -->
+        <div id="alert-area"></div>
+
+        <!-- 最新アップロード情報 -->
+        <div class="section" id="upload-section" style="display: none;">
+            <div class="section-title">
+                📤 最新アップロード
+            </div>
             <div id="upload-details"></div>
         </div>
 
-        <div class="actions">
-            <button class="button" onclick="checkConnection()">🔄 接続状態更新</button>
-            <a href="/gdrive/test-upload" class="button button-success">📤 テスト送信</a>
-            <a href="/" class="button button-secondary">🏠 ホームに戻る</a>
+        <!-- アクションボタン -->
+        <div class="action-buttons">
+            <button class="btn btn-primary" onclick="refreshStatus()" id="refresh-btn">
+                <span id="refresh-icon">🔄</span> 状態更新
+            </button>
+            <button class="btn btn-success" onclick="testUpload()" id="test-upload-btn">
+                <span>📤</span> テスト送信
+            </button>
+            <button class="btn btn-secondary" onclick="authenticateGDrive()" id="auth-btn">
+                <span>🔐</span> 認証設定
+            </button>
+            <a href="/dashboard" class="btn btn-secondary">
+                <span>🏠</span> ダッシュボード
+            </a>
         </div>
 
-        <div class="status-card">
-            <h3>ℹ️ 設定手順</h3>
+        <!-- 設定手順 -->
+        <div class="setup-steps">
+            <div class="section-title">
+                ⚙️ 設定手順
+            </div>
             <ol>
                 <li>Google Cloud Consoleでプロジェクトを作成</li>
                 <li>Google Drive APIを有効化</li>
                 <li>OAuth 2.0認証情報を作成（デスクトップアプリ）</li>
-                <li><code>credentials.json</code>を<code>data/credentials/</code>フォルダに配置</li>
-                <li>初回アクセス時にブラウザで認証</li>
+                <li><code>credentials.json</code>を<code>data/credentials/</code>に配置</li>
+                <li>初回認証でブラウザ認証を完了</li>
             </ol>
+        </div>
+
+        <!-- フッター -->
+        <div class="footer">
+            <div class="last-update">
+                最終更新: <span id="last-update">-</span>
+            </div>
+            <div class="nav-links">
+                <a href="/dashboard" class="nav-link">ダッシュボード</a>
+                <a href="/recording" class="nav-link">録音機能</a>
+                <a href="/tailscale" class="nav-link">Tailscale</a>
+                <a href="/network" class="nav-link">ネットワーク</a>
+            </div>
         </div>
     </div>
 
     <script>
-        function checkConnection() {
-            const statusDiv = document.getElementById('gdrive-status');
-            statusDiv.className = 'status-card loading';
-            statusDiv.innerHTML = '<h3>📡 接続状態確認中...</h3><p>Google Drive接続状態を確認しています。</p>';
-
-            fetch('/api/gdrive-status')
-                .then(response => response.json())
-                .then(data => updateStatus(data))
-                .catch(error => {
-                    console.error('Error:', error);
-                    statusDiv.className = 'status-card status-error';
-                    statusDiv.innerHTML = '<h3>❌ 通信エラー</h3><p>サーバーとの通信に失敗しました。</p>';
-                });
-        }
-
-        function updateStatus(data) {
-            const statusDiv = document.getElementById('gdrive-status');
-            const uploadDiv = document.getElementById('upload-history');
-            const uploadDetailsDiv = document.getElementById('upload-details');
-
-            // 接続状態による表示切り替え
-            let statusClass = 'status-info';
-            let statusIcon = '⚠️';
-            let statusTitle = '未設定';
-
-            switch(data.status || data.connection_status) {
-                case 'connected':
-                    statusClass = 'status-connected';
-                    statusIcon = '✅';
-                    statusTitle = '接続済み';
-                    break;
-                case 'authenticating':
-                    statusClass = 'status-connected';
-                    statusIcon = '✅';
-                    statusTitle = '認証済み・接続中';
-                    break;
-                case 'not_configured':
-                case 'not_authenticated':
-                    statusClass = 'status-warning';
-                    statusIcon = '⚙️';
-                    statusTitle = '設定が必要';
-                    break;
-                case 'authentication_failed':
-                    statusClass = 'status-error';
-                    statusIcon = '❌';
-                    statusTitle = '認証失敗';
-                    break;
-                case 'error':
-                    statusClass = 'status-error';
-                    statusIcon = '❌';
-                    statusTitle = 'エラー';
-                    break;
-                case 'not_available':
-                    statusClass = 'status-error';
-                    statusIcon = '🚫';
-                    statusTitle = '利用不可';
-                    break;
-                default:
-                    statusClass = 'status-info';
-                    statusIcon = '⚠️';
-                    statusTitle = '状態不明';
+        class GDriveManager {
+            constructor() {
+                this.updateInterval = null;
+                this.isUpdating = false;
+                this.init();
             }
 
-            statusDiv.className = `status-card ${statusClass}`;
-            statusDiv.innerHTML = `
-                <h3><span class="status-icon">${statusIcon}</span>${statusTitle}</h3>
-                <div class="info-grid">
-                    <span class="info-label">状態:</span>
-                    <span>${data.status || data.connection_status}</span>
-                    <span class="info-label">メッセージ:</span>
-                    <span>${data.message || '情報なし'}</span>
-                    ${data.user_email ? `
-                        <span class="info-label">ユーザー:</span>
-                        <span>${data.user_email}</span>
-                    ` : ''}
-                    <span class="info-label">最終確認:</span>
-                    <span>${data.last_check || '未確認'}</span>
-                </div>
-            `;
+            async init() {
+                console.log('GDrive Manager initializing...');
+                await this.updateStatus();
+                this.startAutoUpdate();
+            }
 
-            // アップロード履歴表示
-            if (data.last_upload) {
-                const upload = data.last_upload;
-                uploadDetailsDiv.innerHTML = `
-                    <div class="info-grid">
-                        <span class="info-label">ファイル名:</span>
-                        <span>${upload.filename}</span>
-                        <span class="info-label">データタイプ:</span>
-                        <span>${upload.data_type}</span>
-                        <span class="info-label">アップロード時間:</span>
-                        <span>${upload.upload_time}</span>
-                        ${upload.web_link ? `
-                            <span class="info-label">リンク:</span>
-                            <span><a href="${upload.web_link}" target="_blank">Google Driveで開く</a></span>
-                        ` : ''}
+            async updateStatus() {
+                if (this.isUpdating) return;
+                this.isUpdating = true;
+
+                try {
+                    const response = await fetch('/api/gdrive-status');
+                    if (!response.ok) {
+                        throw new Error(`API error: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    this.updateUI(data);
+                    
+                    // 最終更新時刻
+                    document.getElementById('last-update').textContent = 
+                        new Date().toLocaleTimeString('ja-JP');
+                        
+                } catch (error) {
+                    console.error('Status update error:', error);
+                    this.showAlert('データの取得に失敗しました: ' + error.message, 'error');
+                } finally {
+                    this.isUpdating = false;
+                }
+            }
+
+            updateUI(data) {
+                // メイン状態インジケーター
+                const mainStatus = document.getElementById('main-status');
+                const statusClass = this.getStatusIndicatorClass(data.status);
+                mainStatus.className = `status-indicator ${statusClass}`;
+
+                // 接続状態
+                const connectionStatus = document.getElementById('connection-status');
+                connectionStatus.textContent = this.getStatusText(data.status);
+                connectionStatus.className = `status-value ${this.getStatusClass(data.status)}`;
+
+                // ユーザーアカウント
+                document.getElementById('user-email').textContent = data.user_email || '未認証';
+
+                // 最終アップロード
+                const lastUploadElement = document.getElementById('last-upload');
+                if (data.last_upload) {
+                    lastUploadElement.textContent = data.last_upload.upload_time || '情報なし';
+                    this.updateUploadDetails(data.last_upload);
+                } else {
+                    lastUploadElement.textContent = 'なし';
+                    document.getElementById('upload-section').style.display = 'none';
+                }
+
+                // アラート表示
+                if (data.status === 'error' || data.status === 'authentication_failed') {
+                    this.showAlert(data.message, 'error');
+                } else if (data.status === 'not_configured') {
+                    this.showAlert('Google Drive連携の設定が必要です', 'warning');
+                } else if (data.status === 'connected') {
+                    this.clearAlert();
+                }
+            }
+
+            updateUploadDetails(upload) {
+                const uploadSection = document.getElementById('upload-section');
+                const uploadDetails = document.getElementById('upload-details');
+                
+                uploadDetails.innerHTML = `
+                    <div class="upload-item">
+                        <div class="upload-info">
+                            <div class="upload-name">${upload.filename || 'Unknown'}</div>
+                            <div class="upload-details">
+                                タイプ: ${upload.data_type || 'Unknown'} | 
+                                時刻: ${upload.upload_time || 'Unknown'}
+                                ${upload.web_link ? ' | <a href="' + upload.web_link + '" target="_blank">Drive で開く</a>' : ''}
+                            </div>
+                        </div>
                     </div>
                 `;
-                uploadDiv.style.display = 'block';
-            } else {
-                uploadDiv.style.display = 'none';
+                
+                uploadSection.style.display = 'block';
+            }
+
+            getStatusIndicatorClass(status) {
+                switch (status) {
+                    case 'connected':
+                    case 'authenticating':
+                        return 'status-connected';
+                    case 'not_configured':
+                    case 'not_authenticated':
+                        return 'status-warning';
+                    case 'error':
+                    case 'authentication_failed':
+                    case 'not_available':
+                        return 'status-error';
+                    default:
+                        return 'status-warning';
+                }
+            }
+
+            getStatusClass(status) {
+                switch (status) {
+                    case 'connected':
+                    case 'authenticating':
+                        return 'connected';
+                    case 'error':
+                    case 'authentication_failed':
+                    case 'not_available':
+                        return 'error';
+                    default:
+                        return 'warning';
+                }
+            }
+
+            getStatusText(status) {
+                switch (status) {
+                    case 'connected': return '接続済み';
+                    case 'authenticating': return '認証済み';
+                    case 'not_configured': return '未設定';
+                    case 'not_authenticated': return '未認証';
+                    case 'authentication_failed': return '認証失敗';
+                    case 'error': return 'エラー';
+                    case 'not_available': return '利用不可';
+                    default: return '不明';
+                }
+            }
+
+            showAlert(message, type = 'warning') {
+                const alertArea = document.getElementById('alert-area');
+                const alertClass = `alert alert-${type}`;
+                alertArea.innerHTML = `<div class="${alertClass}">${this.escapeHtml(message)}</div>`;
+            }
+
+            clearAlert() {
+                document.getElementById('alert-area').innerHTML = '';
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            startAutoUpdate() {
+                this.updateInterval = setInterval(() => {
+                    this.updateStatus();
+                }, 30000); // 30秒ごと
+            }
+
+            stopAutoUpdate() {
+                if (this.updateInterval) {
+                    clearInterval(this.updateInterval);
+                    this.updateInterval = null;
+                }
             }
         }
 
-        // 初回読み込み
-        checkConnection();
-        
-        // 30秒ごとに自動更新
-        setInterval(checkConnection, 30000);
+        // グローバル関数
+        let gdriveManager;
+
+        function refreshStatus() {
+            const refreshBtn = document.getElementById('refresh-btn');
+            const refreshIcon = document.getElementById('refresh-icon');
+            
+            refreshBtn.disabled = true;
+            refreshIcon.innerHTML = '<span class="loading"></span>';
+            
+            gdriveManager.updateStatus().finally(() => {
+                setTimeout(() => {
+                    refreshBtn.disabled = false;
+                    refreshIcon.textContent = '🔄';
+                }, 1000);
+            });
+        }
+
+        function testUpload() {
+            const testBtn = document.getElementById('test-upload-btn');
+            
+            testBtn.disabled = true;
+            testBtn.innerHTML = '<span class="loading"></span> 送信中...';
+            
+            // 実際のテストアップロード処理は将来実装
+            setTimeout(() => {
+                testBtn.disabled = false;
+                testBtn.innerHTML = '<span>📤</span> テスト送信';
+                alert('テストアップロード機能は開発中です。\n\n将来の機能:\n- テストファイルの自動生成\n- アップロード結果の確認\n- エラー詳細の表示');
+            }, 2000);
+        }
+
+        function authenticateGDrive() {
+            alert('Google Drive認証機能は開発中です。\n\n現在の認証方法:\n1. credentials.jsonをdata/credentials/に配置\n2. アプリ再起動で自動認証\n3. ブラウザで認証画面が開きます');
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            gdriveManager = new GDriveManager();
+        });
+
+        // ページ離脱時のクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            if (gdriveManager) {
+                gdriveManager.stopAutoUpdate();
+            }
+        });
     </script>
 </body>
 </html>
