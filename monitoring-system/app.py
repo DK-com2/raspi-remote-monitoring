@@ -314,29 +314,67 @@ def api_tailscale_status():
             
             # IP アドレスを抽出
             tailscale_ip = None
-            for line in status_lines:
-                if 'self' in line.lower() or line.strip().startswith('100.'):
-                    parts = line.split()
-                    if len(parts) > 0:
-                        tailscale_ip = parts[0]
-                        break
+            devices_data = []
             
-            device_count = len([line for line in status_lines if line.strip() and not line.startswith('#')]) - 1
+            for line in status_lines:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                    
+                parts = line.split()
+                if len(parts) >= 2:
+                    ip = parts[0] if parts[0].startswith('100.') else None
+                    name = parts[1] if len(parts) > 1 else 'Unknown'
+                    
+                    # 自分のデバイスかチェック
+                    if 'self' in line.lower() or line.endswith('(self)'):
+                        tailscale_ip = ip
+                        name = name.replace('(self)', '').strip()
+                        devices_data.append({
+                            'name': f'{name} (このデバイス)',
+                            'ip': ip,
+                            'status': 'online'
+                        })
+                    elif ip:
+                        devices_data.append({
+                            'name': name,
+                            'ip': ip,
+                            'status': 'online'
+                        })
+            
+            # 接続品質の簡易判定
+            connection_quality = 'good' if connected and tailscale_ip else 'poor'
+            
+            # システムログの模擬データ
+            logs = [
+                f'{datetime.now().strftime("%H:%M:%S")} Tailscale status check completed',
+                f'{datetime.now().strftime("%H:%M:%S")} Found {len(devices_data)} connected devices',
+                f'{datetime.now().strftime("%H:%M:%S")} VPN IP: {tailscale_ip or "N/A"}'
+            ]
             
             return jsonify({
                 'status': 'connected' if connected else 'disconnected',
-                'ip_address': tailscale_ip,
-                'device_count': max(0, device_count),
-                'devices': status_lines[:10],
+                'ip': tailscale_ip,
+                'ip_address': tailscale_ip,  # 互換性のため両方提供
+                'device_count': len(devices_data),
+                'devices': devices_data,
+                'connection_quality': connection_quality,
+                'logs': logs,
                 'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'message': 'Tailscale接続中' if connected else 'Tailscale切断中'
             })
         else:
             return jsonify({
                 'status': 'error',
+                'ip': None,
                 'ip_address': None,
                 'device_count': 0,
                 'devices': [],
+                'connection_quality': 'poor',
+                'logs': [
+                    f'{datetime.now().strftime("%H:%M:%S")} ERROR: Tailscale command failed',
+                    f'{datetime.now().strftime("%H:%M:%S")} {result.stderr.strip() if result.stderr else "Unknown error"}'
+                ],
                 'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'message': 'Tailscaleコマンドの実行に失敗しました（未インストールの可能性）'
             })
@@ -344,18 +382,28 @@ def api_tailscale_status():
     except subprocess.TimeoutExpired:
         return jsonify({
             'status': 'timeout',
+            'ip': None,
             'ip_address': None,
             'device_count': 0,
             'devices': [],
+            'connection_quality': 'poor',
+            'logs': [
+                f'{datetime.now().strftime("%H:%M:%S")} ERROR: Tailscale command timed out'
+            ],
             'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'message': 'Tailscaleコマンドがタイムアウトしました'
         })
     except Exception as e:
         return jsonify({
             'status': 'error',
+            'ip': None,
             'ip_address': None,
             'device_count': 0,
             'devices': [],
+            'connection_quality': 'poor',
+            'logs': [
+                f'{datetime.now().strftime("%H:%M:%S")} ERROR: {str(e)}'
+            ],
             'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'message': f'エラー: {str(e)}'
         })

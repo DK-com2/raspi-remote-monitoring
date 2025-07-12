@@ -474,7 +474,7 @@
                 this.isUpdating = true;
 
                 try {
-                    const response = await fetch('/api/tailscale-details');
+                    const response = await fetch('/api/tailscale-status');
                     if (!response.ok) {
                         throw new Error(`API error: ${response.status}`);
                     }
