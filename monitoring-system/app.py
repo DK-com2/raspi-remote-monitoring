@@ -147,8 +147,104 @@ def api_speed_test():
         'timestamp': datetime.now().strftime('%H:%M:%S')
     })
 
-# 信号強度、DNS情報、デバイススキャンのAPIエンドポイントは削除
-# シンプルなネットワークテストページではこれらの機能は不要
+# 信号強度、DNS情報は削除したが、デバイス管理は簡易版で保持
+
+@app.route('/api/device-scan')
+def api_device_scan():
+    """簡易USBデバイススキャン（ラズパイ対応）"""
+    try:
+        import subprocess
+        import re
+        
+        devices = []
+        
+        # lsusbコマンドでUSBデバイスを取得
+        try:
+            result = subprocess.run(['lsusb'], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if line.strip():
+                        # lsusbの出力を解析
+                        # 例: Bus 001 Device 002: ID 1d6b:0002 Linux Foundation 2.0 root hub
+                        match = re.search(r'Bus\s+(\d+)\s+Device\s+(\d+):\s+ID\s+([0-9a-f:]+)\s+(.+)', line)
+                        if match:
+                            bus, device_num, device_id, description = match.groups()
+                            
+                            # デバイスタイプを推定
+                            device_type = 'その他'
+                            desc_lower = description.lower()
+                            if ('audio' in desc_lower or 'sound' in desc_lower or 
+                                'microphone' in desc_lower or 'mic' in desc_lower or
+                                'speaker' in desc_lower or 'headphone' in desc_lower):
+                                device_type = 'オーディオ'
+                            elif 'camera' in desc_lower or 'webcam' in desc_lower:
+                                device_type = 'カメラ'
+                            elif 'storage' in desc_lower or 'disk' in desc_lower:
+                                device_type = 'ストレージ'
+                            elif 'keyboard' in desc_lower or 'mouse' in desc_lower:
+                                device_type = '入力デバイス'
+                            elif 'hub' in desc_lower:
+                                device_type = 'USBハブ'
+                            elif 'serial' in desc_lower or 'uart' in desc_lower:
+                                device_type = 'シリアル通信'
+                            elif 'root hub' in desc_lower:
+                                continue  # ルートハブは表示をスキップ
+                            
+                            devices.append({
+                                'name': description,
+                                'type': device_type,
+                                'bus': bus,
+                                'device': device_num,
+                                'id': device_id
+                            })
+        except subprocess.TimeoutExpired:
+            print("lsusb command timed out")
+        except FileNotFoundError:
+            print("lsusb command not found")
+        
+        # /devディレクトリからオーディオデバイスを探す
+        try:
+            import os
+            audio_devices = []
+            
+            # ALSAデバイス
+            if os.path.exists('/proc/asound/cards'):
+                with open('/proc/asound/cards', 'r') as f:
+                    for line in f:
+                        if ':' in line and not line.strip().startswith(' '):
+                            card_info = line.strip()
+                            audio_devices.append({
+                                'name': f'オーディオカード: {card_info}',
+                                'type': 'オーディオ',
+                                'bus': 'ALSA',
+                                'device': 'N/A',
+                                'id': 'alsa'
+                            })
+            
+            # 重複を避けてオーディオデバイスを追加
+            existing_audio = [d for d in devices if d['type'] == 'オーディオ']
+            if not existing_audio and audio_devices:
+                devices.extend(audio_devices)
+                
+        except Exception as e:
+            print(f"Audio device detection error: {e}")
+        
+        return jsonify({
+            'devices': devices,
+            'count': len(devices),
+            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'status': 'success' if devices else 'no_devices_found'
+        })
+        
+    except Exception as e:
+        print(f"Device scan error: {e}")
+        return jsonify({
+            'devices': [],
+            'count': 0,
+            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'status': 'error',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/crontab-status')
 def api_crontab_status():
